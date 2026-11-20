@@ -13,6 +13,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Chạy trong bản APK (Capacitor) hay trình duyệt
 const NATIVE = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
 const PLG = NATIVE ? Capacitor.Plugins : {};
+if (NATIVE && !PLG.Gallery && Capacitor.registerPlugin) PLG.Gallery = Capacitor.registerPlugin('Gallery');
+const APP_VERSION = window.APP_VERSION || 'dev';
+const REPO = 'hung300880/ln-dateh-gps';
 
 function toast(msg, ms = 2500) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -29,7 +32,7 @@ function loadScript(src) {
 const S = {
   set: {
     crs: CRS.DEFAULT, base: 'otm', labels: true, trackMinDist: 5, trackMaxAcc: 30, autoVertexDist: 10,
-    avgCount: 10, stampPhoto: true, photoMax: 1600, mapboxToken: '', surveyor: ''
+    avgCount: 10, stampPhoto: true, saveGallery: true, photoMax: 1600, mapboxToken: '', surveyor: ''
   },
   feats: new Map(), lyr: new Map(), pos: null, heading: null, follow: true,
   track: null, draw: null, nav: null, forms: [], custom: [], mbt: new Map(), sat: new Map(), lastFix: null
@@ -570,6 +573,7 @@ async function storePhoto(file, f, shotTime, shotHeading) {
     blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
   }
   const pid = 'ph_' + uid();
+  if (S.set.saveGallery && NATIVE) saveToGallery(blob, shotTime, f.name).catch(e => toast('Không lưu được vào Bộ sưu tập: ' + (e.message || e), 4000));
   await DB.put('photos', pid, { blob, t: shotTime, ll: S.pos ? [S.pos.ll.lng, S.pos.ll.lat] : null, h: hdg });
   return pid;
 }
@@ -579,9 +583,10 @@ async function renderPhotos(f, el) {
     const p = await DB.get('photos', pid); if (!p) continue;
     const u = URL.createObjectURL(p.blob);
     const d = document.createElement('div'); d.className = 'ph';
-    d.innerHTML = `<img src="${u}"><button>✕</button>`;
+    d.innerHTML = `<img src="${u}"><button>✕</button><button class="sv" title="Lưu vào Bộ sưu tập">⬇</button>`;
+    d.querySelector('.sv').onclick = () => saveToGallery(p.blob, p.t, f.name, true).catch(e => toast('Lỗi: ' + (e.message || e)));
     d.querySelector('img').onclick = () => window.open(u, '_blank');
-    d.querySelector('button').onclick = async () => { if (!confirm('Xóa ảnh?')) return; f.photos = f.photos.filter(x => x !== pid); await DB.del('photos', pid); await saveFeature(f); renderPhotos(f, el); };
+    d.querySelector('button:not(.sv)').onclick = async () => { if (!confirm('Xóa ảnh?')) return; f.photos = f.photos.filter(x => x !== pid); await DB.del('photos', pid); await saveFeature(f); renderPhotos(f, el); };
     el.appendChild(d);
   }
   if (!f.photos || !f.photos.length) el.innerHTML = '<span class="muted">Chưa có ảnh</span>';
@@ -726,7 +731,9 @@ function mainMenu() {
       ['⚙️', 'Cài đặt', settingsSheet], ['💾', 'Sao lưu / phục hồi', backupSheet], ['ℹ️', 'Hướng dẫn', helpSheet]
     ];
     body.innerHTML = `<div class="menu-grid">${items.map((it, i) => `<button data-i="${i}"><i>${it[0]}</i>${it[1]}</button>`).join('')}</div>
-      <p class="muted" style="text-align:center;margin-top:18px">Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>Phiên bản 1.0 · ${S.feats.size} đối tượng</p>`;
+      <div class="gap"></div><button class="btn block" id="mnUpd">🔄 Kiểm tra cập nhật</button>
+      <p class="muted" style="text-align:center;margin-top:14px">Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>Phiên bản ${esc(APP_VERSION)}${NATIVE ? ' (APK)' : ' (web)'} · ${S.feats.size} đối tượng</p>`;
+    $('#mnUpd').onclick = () => { closeSheet(); checkUpdate(true); };
     body.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const f = items[+b.dataset.i][2]; stack.length = 1; f(true); });
   });
 }
@@ -1114,6 +1121,7 @@ const backupSheet = sheetFn('Sao lưu / phục hồi', body => {
   body.innerHTML = `<p>Sao lưu toàn bộ dữ liệu, mẫu biểu, hình ảnh và cài đặt thành 1 file để chuyển sang máy khác hoặc lưu trữ.</p>
     <button class="btn primary block" id="bkOut">💾 Tạo file sao lưu</button><div class="gap"></div>
     <button class="btn block" id="bkIn">📂 Phục hồi từ file sao lưu</button><div class="gap"></div>
+    <button class="btn block" id="bkGal">🖼️ Lưu tất cả ảnh vào Bộ sưu tập</button><div class="gap"></div>
     <div class="sec">Dung lượng</div><p id="bkSt" class="muted">Đang tính…</p>
     <button class="btn danger block" id="bkClr">🗑️ Xóa toàn bộ dữ liệu thu thập</button>`;
   (async () => { const e = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null; $('#bkSt').textContent = `${S.feats.size} đối tượng · ${await DB.count('photos')} ảnh · ${await DB.count('tiles')} ô bản đồ offline` + (e ? ` · đã dùng ${(e.usage / 1048576).toFixed(1)} MB / ${(e.quota / 1048576).toFixed(0)} MB` : ''); })();
@@ -1122,6 +1130,7 @@ const backupSheet = sheetFn('Sao lưu / phục hồi', body => {
     const fc = await toGeoJSONFC([...S.feats.values()], true);
     shareBlob(new Blob([JSON.stringify({ lndateh_backup: 1, t: Date.now(), settings: S.set, forms: S.forms, custom: S.custom, data: fc })], { type: 'application/json' }), 'SaoLuu_LNDaTehGPS_' + new Date().toISOString().slice(0, 10) + '.json');
   };
+  $('#bkGal').onclick = saveAllToGallery;
   $('#bkIn').onclick = async () => { const f = await pickFile('.json'); if (f) restoreBackup(JSON.parse(await f.text())); };
   $('#bkClr').onclick = async () => {
     if (!confirm('Xóa TOÀN BỘ dữ liệu đã thu thập (không xóa mẫu biểu, bản đồ offline)? Hãy sao lưu trước!')) return;
@@ -1309,10 +1318,11 @@ const settingsSheet = sheetFn('Cài đặt', body => {
     <div class="sec">Hiển thị & ảnh</div>
     <label class="f"><input type="checkbox" id="seL" ${S.set.labels ? 'checked' : ''}>Hiện nhãn tên đối tượng</label>
     <label class="f"><input type="checkbox" id="seS" ${S.set.stampPhoto ? 'checked' : ''}>Đóng dấu thời gian, tọa độ VN2000 lên ảnh</label>
+    <label class="f"><input type="checkbox" id="seG" ${S.set.saveGallery ? 'checked' : ''}>Tự động lưu ảnh vào Bộ sưu tập (album "LN DaTeh GPS")${NATIVE ? '' : ' — chỉ bản APK'}</label>
     <label class="f">Kích thước ảnh tối đa (px)</label><select id="seP">${[1024, 1600, 2048, 3000].map(v => `<option ${v === S.set.photoMax ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <div class="gap"></div><button class="btn primary block" id="seOk">Lưu cài đặt</button>`;
   $('#seOk').onclick = async () => {
-    Object.assign(S.set, { crs: $('#seC').value, surveyor: $('#seU').value.trim(), trackMinDist: +$('#seD').value || 5, trackMaxAcc: +$('#seA').value || 30, autoVertexDist: +$('#seV').value || 10, avgCount: Math.max(2, +$('#seN').value || 10), labels: $('#seL').checked, stampPhoto: $('#seS').checked, photoMax: +$('#seP').value });
+    Object.assign(S.set, { crs: $('#seC').value, surveyor: $('#seU').value.trim(), trackMinDist: +$('#seD').value || 5, trackMaxAcc: +$('#seA').value || 30, autoVertexDist: +$('#seV').value || 10, avgCount: Math.max(2, +$('#seN').value || 10), labels: $('#seL').checked, stampPhoto: $('#seS').checked, saveGallery: $('#seG').checked, photoMax: +$('#seP').value });
     await saveSet(); updateCrsLabel(); updateStatus(); S.feats.forEach(render); toast('Đã lưu cài đặt'); closeSheet();
   };
 });
@@ -1329,6 +1339,52 @@ const helpSheet = sheetFn('Hướng dẫn nhanh', body => {
   <p>• Nhấn giữ bản đồ: xem tọa độ VN2000 tại điểm, tạo điểm, dẫn đường.<br>• Chạm dòng hệ tọa độ trên thanh trạng thái để đổi hệ VN2000 theo tỉnh.<br>• Chạm đối tượng trên lớp MBTiles vector để xem thuộc tính.<br>• Mẫu biểu chia sẻ qua QR: Menu → Mẫu biểu → QR.</p>`;
 });
 
+
+/* ================= Lưu ảnh vào Bộ sưu tập ================= */
+async function saveToGallery(blob, t, name, notify) {
+  const d = new Date(t || Date.now()), p = n => String(n).padStart(2, '0');
+  const fn = `LNDT_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` + (name && !/^Ảnh \d/.test(name) ? '_' + slug(name).slice(0, 40) : '') + '_' + Math.random().toString(36).slice(2, 5);
+  if (NATIVE && PLG.Gallery) {
+    await PLG.Gallery.saveImage({ data: await blobToDataURL(blob), fileName: fn });
+    if (notify) toast('Đã lưu vào Bộ sưu tập › album "LN DaTeh GPS"');
+  } else await shareBlob(blob, fn + '.jpg');
+}
+async function saveAllToGallery() {
+  let n = 0;
+  for (const f of S.feats.values()) for (const pid of f.photos || []) {
+    const p = await DB.get('photos', pid); if (!p) continue;
+    try { await saveToGallery(p.blob, p.t, f.name); n++; } catch (e) { }
+    if (!NATIVE) break; // trình duyệt: chỉ chia sẻ từng ảnh
+  }
+  toast(NATIVE ? `Đã lưu ${n} ảnh vào album "LN DaTeh GPS"` : 'Trình duyệt không lưu hàng loạt được — dùng nút ⬇ trên từng ảnh', 4000);
+}
+
+/* ================= Cập nhật phiên bản ================= */
+const verNum = v => String(v || '').replace(/^v/, '').split('.').map(x => parseInt(x, 10) || 0);
+function newer(a, b) { const x = verNum(a), y = verNum(b); for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
+function showUpdBar(text, onGo) {
+  $('#updText').textContent = text; $('#updBar').classList.remove('hidden');
+  $('#updGo').onclick = onGo; $('#updX').onclick = () => $('#updBar').classList.add('hidden');
+}
+async function checkUpdate(manual) {
+  if (!NATIVE) { // bản web: service worker tự cập nhật
+    if (manual) { const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) await r.update(); toast('Bản web tự cập nhật khi có mạng. Phiên bản: ' + APP_VERSION); }
+    return;
+  }
+  try {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rel = await r.json();
+    const asset = (rel.assets || []).find(a => /\.apk$/i.test(a.name));
+    if (asset && (APP_VERSION === 'dev' || newer(rel.tag_name, APP_VERSION))) {
+      showUpdBar(`Có phiên bản mới ${rel.tag_name} (đang dùng ${APP_VERSION})`, () => {
+        $('#updBar').classList.add('hidden');
+        alert('Trình duyệt sẽ tải file cập nhật. Tải xong, bấm "Mở" → "Cập nhật". Dữ liệu đã thu thập được giữ nguyên.');
+        window.location.href = asset.browser_download_url;
+      });
+    } else if (manual) toast('Đang dùng phiên bản mới nhất: ' + APP_VERSION);
+  } catch (e) { if (manual) toast('Không kiểm tra được cập nhật (cần Internet)'); }
+}
 
 /* ================= Camera hiện trường ================= */
 const CAM = { stream: null, facing: 'environment', featId: null, multi: false, timer: null, busy: false };
@@ -1425,7 +1481,12 @@ loadAll().then(() => { startGPS();
   // Tự bật la bàn nếu máy không yêu cầu xin quyền (Android); iPhone cần chạm nút 🧭
   if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) startCompass(); if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); })
   .catch(e => { console.error(e); toast('Lỗi khởi động: ' + e.message, 5000); startGPS(); });
-if ('serviceWorker' in navigator && location.protocol !== 'file:' && !NATIVE) navigator.serviceWorker.register('sw.js').catch(() => { });
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && !NATIVE) {
+  const hadCtrl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').catch(() => { });
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtrl) showUpdBar('Đã tải phiên bản mới của ứng dụng', () => location.reload()); });
+}
+setTimeout(() => checkUpdate(false), 4000);
 $('#btnLocate').classList.add('active');
 window.LNDT = { S, map, CRS }; // gỡ lỗi
 })();

@@ -18,8 +18,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Chuan bi thu muc web
         run: |
+          N=$(git rev-list --count HEAD)
+          echo "window.APP_VERSION = '1.0.$N';" > js/version.js
+          sed -i "s/const V = 'lndateh-v[0-9]*';/const V = 'lndateh-v$N';/" sw.js
           mkdir _site
           cp -r index.html mbtiles-tool.html sw.js manifest.webmanifest css js vendor icons HUONG-DAN.md _site/
           touch _site/.nojekyll

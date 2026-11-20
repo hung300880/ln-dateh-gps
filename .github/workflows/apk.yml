@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -17,18 +19,37 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Xac dinh so phien ban
+        run: |
+          N=$(git rev-list --count HEAD)
+          echo "VERSION_CODE=$N" >> $GITHUB_ENV
+          echo "VERSION_NAME=1.0.$N" >> $GITHUB_ENV
+          echo "window.APP_VERSION = '1.0.$N';" > js/version.js
       - name: Cai thu vien va dong bo web vao Android
         working-directory: apk
         run: |
           npm ci
           npm run sync-web
           npx cap sync android
-      - name: Build APK
+      - name: Build APK (ky so co dinh neu da cai secret)
         working-directory: apk/android
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk ../../LN-DaTeh-GPS.apk
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > $RUNNER_TEMP/release.jks
+            export KS_FILE=$RUNNER_TEMP/release.jks
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../../LN-DaTeh-GPS.apk
+            echo "SIGNED=release" >> $GITHUB_ENV
+          else
+            echo "::warning::Chua cai secret ANDROID_KEYSTORE_B64 - build ban debug (khong cai de len ban cu duoc)"
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../../LN-DaTeh-GPS.apk
+            echo "SIGNED=debug" >> $GITHUB_ENV
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: LN-DaTeh-GPS-apk
@@ -37,5 +58,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.0.${{ github.run_number }}"
-          gh release create "$TAG" LN-DaTeh-GPS.apk --title "LN DaTeh GPS $TAG" --notes "Ban APK cai dat truc tiep tren Android (cho phep cai tu nguon khong xac dinh)."
+          TAG="v$VERSION_NAME"
+          NOTE="Ban APK Android. Chu ky: $SIGNED."
+          if [ "$SIGNED" = "release" ]; then NOTE="$NOTE Cai de truc tiep len ban cu, khong mat du lieu."; fi
+          gh release create "$TAG" LN-DaTeh-GPS.apk --title "LN DaTeh GPS $TAG" --notes "$NOTE"
