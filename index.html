@@ -27,6 +27,7 @@
     <div><small id="stLa">X</small> <b id="stA">--</b></div>
     <div><small id="stLb">Y</small> <b id="stB">--</b></div>
   </div>
+  <div class="st-time" id="stTime">--</div>
   <div class="st-extra"><span id="stAlt">Cao: --</span><span id="stSpd">V: --</span><span id="stHdg">Hướng: --</span></div>
 </div>
 
@@ -38,6 +39,7 @@
   <button class="fab" id="btnLayers" title="Bản đồ nền">🗺️</button>
   <button class="fab" id="btnCompass" title="La bàn">🧭</button>
   <button class="fab" id="btnLocate" title="Vị trí của tôi">◎</button>
+  <button class="fab cam" id="btnCamera" title="Chụp ảnh hiện trường">📷</button>
 </div>
 
 <!-- Tâm ngắm khi vẽ -->
@@ -79,6 +81,21 @@
 <section id="sheet" class="hidden">
   <header><button id="sheetBack" class="icon-btn">‹</button><h2 id="sheetTitle"></h2><button id="sheetClose" class="icon-btn">✕</button></header>
   <div id="sheetBody"></div>
+</section>
+
+<!-- Camera hiện trường -->
+<section id="camera" class="hidden">
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div id="camInfo"></div>
+  <div id="camFlash"></div>
+  <div id="camBar">
+    <button id="camClose" class="cam-btn">✕</button>
+    <button id="camThumb" class="cam-thumb" title="Xem đối tượng"></button>
+    <button id="camShot" class="cam-shot" aria-label="Chụp"></button>
+    <button id="camMode" class="cam-btn small">1 ảnh<br>1 điểm</button>
+    <button id="camFlip" class="cam-btn">🔄</button>
+  </div>
+  <div id="camTarget"></div>
 </section>
 
 <div id="toast"></div>

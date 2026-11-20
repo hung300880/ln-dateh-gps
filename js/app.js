@@ -7,6 +7,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&a
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const fmtLen = m => m >= 1000 ? (m / 1000).toFixed(3) + ' km' : m.toFixed(1) + ' m';
 const fmtArea = a => a >= 10000 ? (a / 10000).toFixed(4) + ' ha' : a.toFixed(1) + ' m² (' + (a / 10000).toFixed(4) + ' ha)';
+const fmtDate = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `${['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.getDay()]} ${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
 const fmtTime = t => new Date(t).toLocaleString('vi-VN', { hour12: false });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Chạy trong bản APK (Capacitor) hay trình duyệt
@@ -514,7 +515,7 @@ function openFeature(id, isNew) {
     $('#fForm').onchange = () => { collect(); f.formId = $('#fForm').value; showTop(); };
     renderPhotos(f, $('#fPhotos'));
     const addPh = cap => pickPhoto(cap).then(async file => { if (!file) return; collect(); toast('Đang xử lý ảnh…'); const pid = await storePhoto(file, f); f.photos.push(pid); await saveFeature(f); renderPhotos(f, $('#fPhotos')); });
-    $('#fCam').onclick = () => addPh(true); $('#fGal').onclick = () => addPh(false);
+    $('#fCam').onclick = () => { collect(); saveFeature(f).then(() => { closeSheet(); openCamera(f.id); }); }; $('#fGal').onclick = () => addPh(false);
     $('#fSave').onclick = async () => {
       collect();
       const fm = S.forms.find(x => x.id === f.formId);
@@ -545,7 +546,8 @@ function pickPhoto(capture) {
     i.onchange = () => res(i.files[0]); i.click();
   });
 }
-async function storePhoto(file, f) {
+async function storePhoto(file, f, shotTime) {
+  shotTime = shotTime || Date.now();
   const bmp = await createImageBitmap(file).catch(() => null);
   let blob = file;
   if (bmp) {
@@ -553,7 +555,7 @@ async function storePhoto(file, f) {
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
     const x = c.getContext('2d'); x.drawImage(bmp, 0, 0, c.width, c.height);
     if (S.set.stampPhoto) {
-      const lines = [fmtTime(Date.now())];
+      const lines = [fmtDate(shotTime)];
       if (S.pos) { const r = CRS.fromWGS(S.set.crs, S.pos.ll.lng, S.pos.ll.lat); lines.push(`${r.la}: ${r.a}  ${r.lb}: ${r.b}  (±${S.pos.acc.toFixed(0)}m)`); lines.push(CRS.BY[S.set.crs].name); }
       if (f.name) lines.push(f.name);
       if (S.heading != null) lines.push('Hướng chụp: ' + Math.round(S.heading) + '° ' + dirName(S.heading));
@@ -567,7 +569,7 @@ async function storePhoto(file, f) {
     blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
   }
   const pid = 'ph_' + uid();
-  await DB.put('photos', pid, { blob, t: Date.now(), ll: S.pos ? [S.pos.ll.lng, S.pos.ll.lat] : null, h: S.heading });
+  await DB.put('photos', pid, { blob, t: shotTime, ll: S.pos ? [S.pos.ll.lng, S.pos.ll.lat] : null, h: S.heading });
   return pid;
 }
 async function renderPhotos(f, el) {
@@ -686,6 +688,13 @@ $('#btnLocate').onclick = () => {
   if (S.pos) map.setView(S.pos.ll, Math.max(map.getZoom(), 17)); else toast('Đang chờ tín hiệu GPS…');
 };
 $('#btnCompass').onclick = () => compassSheet();
+$('#btnCamera').onclick = () => openCamera();
+// Đồng hồ trên thanh trạng thái
+function tickClock() {
+  const age = S.pos ? Math.round((Date.now() - S.pos.t) / 1000) : null;
+  $('#stTime').textContent = '🕒 ' + fmtDate(Date.now()) + (age != null && age > 15 ? `  ·  GPS cập nhật ${age}s trước` : '');
+}
+tickClock(); setInterval(tickClock, 1000);
 $('#btnLayers').onclick = () => layersSheet();
 $('#stCrs').onclick = () => settingsSheet();
 $('#dpGps').onclick = () => { if (!S.pos) return toast('Chưa có GPS'); addVertex(S.pos.ll); };
@@ -1318,6 +1327,89 @@ const helpSheet = sheetFn('Hướng dẫn nhanh', body => {
   <div class="sec">Mẹo</div>
   <p>• Nhấn giữ bản đồ: xem tọa độ VN2000 tại điểm, tạo điểm, dẫn đường.<br>• Chạm dòng hệ tọa độ trên thanh trạng thái để đổi hệ VN2000 theo tỉnh.<br>• Chạm đối tượng trên lớp MBTiles vector để xem thuộc tính.<br>• Mẫu biểu chia sẻ qua QR: Menu → Mẫu biểu → QR.</p>`;
 });
+
+
+/* ================= Camera hiện trường ================= */
+const CAM = { stream: null, facing: 'environment', featId: null, multi: false, timer: null, busy: false };
+function camInfoText() {
+  const lines = [`<b>🕒 ${fmtDate(Date.now())}</b>`];
+  if (S.pos) {
+    const r = CRS.fromWGS(S.set.crs, S.pos.ll.lng, S.pos.ll.lat);
+    lines.push(`${r.la}: <b>${r.a}</b>   ${r.lb}: <b>${r.b}</b>`);
+    lines.push(`±${S.pos.acc.toFixed(0)} m · Cao ${S.pos.alt != null ? S.pos.alt.toFixed(0) + ' m' : '--'} · ${esc(CRS.BY[S.set.crs].name)}`);
+  } else lines.push('Đang chờ tín hiệu GPS…');
+  if (S.heading != null) lines.push(`Hướng chụp: ${Math.round(S.heading)}° ${dirName(S.heading)}`);
+  return lines.join('\n');
+}
+function camTargetText() {
+  const f = CAM.featId && S.feats.get(CAM.featId);
+  $('#camTarget').textContent = f ? `Ảnh lưu vào: ${f.name || KIND[f.kind].n} (${(f.photos || []).length} ảnh)` : (CAM.multi ? 'Ảnh đầu tiên tạo điểm mới, các ảnh sau gộp vào điểm đó' : 'Mỗi ảnh tạo một điểm mới tại vị trí GPS');
+  $('#camMode').classList.toggle('on', CAM.multi);
+  $('#camMode').innerHTML = CAM.multi ? 'Nhiều ảnh<br>1 điểm' : '1 ảnh<br>1 điểm';
+}
+async function startStream() {
+  if (CAM.stream) CAM.stream.getTracks().forEach(t => t.stop());
+  CAM.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: CAM.facing }, width: { ideal: 3840 }, height: { ideal: 2160 } } });
+  const v = $('#camVideo'); v.srcObject = CAM.stream; await v.play().catch(() => { });
+}
+async function openCamera(featId) {
+  CAM.featId = featId || null; CAM.fixed = !!featId;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return cameraFallback();
+  $('#camera').classList.remove('hidden');
+  startCompass(); keepAwake(true);
+  try { await startStream(); }
+  catch (e) { closeCamera(); toast('Không mở được camera tích hợp, dùng camera của máy'); return cameraFallback(); }
+  $('#camInfo').innerHTML = camInfoText(); camTargetText();
+  CAM.timer = setInterval(() => { $('#camInfo').innerHTML = camInfoText(); }, 500);
+  history.pushState({ cam: 1 }, '');
+}
+function closeCamera() {
+  clearInterval(CAM.timer);
+  if (CAM.stream) CAM.stream.getTracks().forEach(t => t.stop()); CAM.stream = null;
+  $('#camera').classList.add('hidden');
+  if (!S.track && !(S.draw && S.draw.auto)) keepAwake(false);
+  const f = CAM.featId && S.feats.get(CAM.featId);
+  if (CAM.fixed && f) openFeature(f.id);
+}
+window.addEventListener('popstate', () => { if (!$('#camera').classList.contains('hidden')) closeCamera(); });
+async function cameraFallback() {
+  const file = await pickPhoto(true); if (!file) return;
+  await savePhotoShot(file, Date.now());
+}
+async function savePhotoShot(blob, t) {
+  let f = CAM.featId && S.feats.get(CAM.featId);
+  if (!f) {
+    if (!S.pos) { toast('Chưa có GPS — ảnh được lưu tại tâm bản đồ'); }
+    const ll = S.pos ? S.pos.ll : map.getCenter();
+    f = newFeature('point', { type: 'Point', coordinates: [+ll.lng.toFixed(7), +ll.lat.toFixed(7)] }, { name: 'Ảnh ' + fmtDate(t).slice(3), acc: S.pos ? S.pos.acc : null, alt: S.pos ? S.pos.alt : null, note: S.heading != null ? `Hướng chụp ${Math.round(S.heading)}° ${dirName(S.heading)}` : '' });
+    if (CAM.multi || CAM.fixed) CAM.featId = f.id;
+  }
+  const pid = await storePhoto(blob, f, t);
+  f.photos = f.photos || []; f.photos.push(pid);
+  await saveFeature(f);
+  if (!CAM.multi && !CAM.fixed) CAM.lastId = f.id; else CAM.lastId = f.id;
+  return f;
+}
+$('#camShot').onclick = async () => {
+  if (CAM.busy) return; CAM.busy = true;
+  const v = $('#camVideo'), t = Date.now();
+  try {
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    $('#camFlash').classList.add('on'); setTimeout(() => $('#camFlash').classList.remove('on'), 60);
+    if (navigator.vibrate) navigator.vibrate(30);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+    const f = await savePhotoShot(blob, t);
+    const p = await DB.get('photos', f.photos[f.photos.length - 1]);
+    if (p) { const u = URL.createObjectURL(p.blob); $('#camThumb').style.backgroundImage = `url(${u})`; }
+    camTargetText(); toast('Đã lưu ảnh · ' + (f.name || 'điểm'), 1200);
+  } catch (e) { toast('Lỗi chụp ảnh: ' + e.message); }
+  CAM.busy = false;
+};
+$('#camClose').onclick = () => { if (history.state && history.state.cam) history.back(); else closeCamera(); };
+$('#camFlip').onclick = async () => { CAM.facing = CAM.facing === 'environment' ? 'user' : 'environment'; try { await startStream(); } catch (e) { toast('Không đổi được camera'); } };
+$('#camMode').onclick = () => { if (CAM.fixed) return toast('Đang chụp cho đối tượng đã chọn'); CAM.multi = !CAM.multi; CAM.featId = null; camTargetText(); };
+$('#camThumb').onclick = () => { const id = CAM.lastId; if (!id) return; CAM.fixed = false; if (history.state && history.state.cam) history.back(); else closeCamera(); setTimeout(() => { const f = S.feats.get(id); if (f) { zoomTo(f); openFeature(id); } }, 300); };
 
 /* ================= Khởi động ================= */
 // Cho phép mở file bằng kéo-thả trên máy tính

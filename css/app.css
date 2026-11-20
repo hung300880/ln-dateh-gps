@@ -19,6 +19,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, 
 .st-acc { font-weight: 600; }
 .st-coords { display: flex; gap: 14px; font-variant-numeric: tabular-nums; font-size: 15px; margin-top: 2px; }
 .st-coords small { color: var(--muted); }
+.st-time { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .st-extra { display: flex; gap: 10px; color: var(--muted); font-size: 12px; margin-top: 2px; flex-wrap: wrap; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.off { background: #999; } .dot.bad { background: #e53935; } .dot.mid { background: #fb8c00; } .dot.good { background: #43a047; }
@@ -28,7 +29,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, 
 .fab.active { background: var(--green2); color: #fff; }
 #btnLocate { font-size: 24px; font-weight: 700; }
 
-.badge { position: absolute; z-index: 800; left: 8px; top: calc(96px + var(--safe-t)); background: var(--red); color: #fff; padding: 4px 10px; border-radius: 14px; font-size: 12px; font-weight: 700; animation: blink 1.6s infinite; }
+.badge { position: absolute; z-index: 800; left: 8px; top: calc(118px + var(--safe-t)); background: var(--red); color: #fff; padding: 4px 10px; border-radius: 14px; font-size: 12px; font-weight: 700; animation: blink 1.6s infinite; }
 @keyframes blink { 50% { opacity: .65; } }
 
 #crosshair { position: absolute; z-index: 700; left: 50%; top: calc((100% - 60px - var(--safe-b)) / 2); transform: translate(-50%, -50%); font-size: 36px; color: #d50000; pointer-events: none; text-shadow: 0 0 3px #fff; font-weight: 300; }
@@ -110,3 +111,20 @@ video.scan { width: 100%; border-radius: 10px; background: #000; }
 .leaflet-popup-content { margin: 10px 12px; font-size: 13px; }
 .mk-icon { font-size: 22px; line-height: 22px; text-align: center; filter: drop-shadow(0 1px 1px rgba(0,0,0,.6)); }
 .leaflet-control-scale { margin-bottom: 6px !important; }
+
+/* Camera hiện trường */
+.fab.cam { background: #ef6c00; color: #fff; }
+#camera { position: fixed; inset: 0; z-index: 3000; background: #000; }
+#camVideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#camInfo { position: absolute; left: 0; right: 0; top: 0; padding: calc(10px + var(--safe-t)) 14px 10px; background: linear-gradient(rgba(0,0,0,.65), rgba(0,0,0,0)); color: #fff; font-size: 13.5px; line-height: 1.45; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px #000; white-space: pre-line; }
+#camInfo b { font-size: 15px; }
+#camTarget { position: absolute; left: 0; right: 0; bottom: calc(118px + var(--safe-b)); text-align: center; color: #fff; font-size: 13px; text-shadow: 0 1px 2px #000; }
+#camBar { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px 12px calc(20px + var(--safe-b)); display: flex; align-items: center; justify-content: space-around; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.7)); }
+.cam-btn { width: 52px; height: 52px; border-radius: 50%; border: none; background: rgba(255,255,255,.18); color: #fff; font-size: 22px; }
+.cam-btn.small { font-size: 10.5px; line-height: 1.15; font-weight: 600; }
+.cam-btn.small.on { background: #2e7d32; }
+.cam-shot { width: 76px; height: 76px; border-radius: 50%; border: 5px solid #fff; background: rgba(255,255,255,.35); }
+.cam-shot:active { background: #fff; transform: scale(.94); }
+.cam-thumb { width: 52px; height: 52px; border-radius: 10px; border: 2px solid #fff; background: #222 center/cover no-repeat; }
+#camFlash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
+#camFlash.on { opacity: .8; transition: none; }
