@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+def lndtVersionCode() { def v = System.getenv("VERSION_CODE"); return (v != null && v != "") ? Integer.parseInt(v) : 1 }
+def lndtVersionName() { def v = System.getenv("VERSION_NAME"); return (v != null && v != "") ? v : "1.0.dev" }
+
 android {
     namespace "vn.lamnghiepdateh.gps"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +10,8 @@ android {
         applicationId "vn.lamnghiepdateh.gps"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (System.getenv("VERSION_CODE") ?: "1") as Integer
-        versionName System.getenv("VERSION_NAME") ?: "1.0.dev"
+        versionCode lndtVersionCode()
+        versionName lndtVersionName()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -18,8 +21,9 @@ android {
     }
     signingConfigs {
         release {
-            if (System.getenv("KS_FILE")) {
-                storeFile file(System.getenv("KS_FILE"))
+            def ks = System.getenv("KS_FILE")
+            if (ks != null && ks != "") {
+                storeFile file(ks)
                 storePassword System.getenv("KS_PASS")
                 keyAlias "lndateh"
                 keyPassword System.getenv("KS_PASS")
@@ -28,7 +32,8 @@ android {
     }
     buildTypes {
         release {
-            if (System.getenv("KS_FILE")) signingConfig signingConfigs.release
+            def ks2 = System.getenv("KS_FILE")
+            if (ks2 != null && ks2 != "") signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

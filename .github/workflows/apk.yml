@@ -41,12 +41,12 @@ jobs:
           if [ -n "$KS_B64" ]; then
             echo "$KS_B64" | base64 -d > $RUNNER_TEMP/release.jks
             export KS_FILE=$RUNNER_TEMP/release.jks
-            ./gradlew assembleRelease --no-daemon
+            ./gradlew assembleRelease --no-daemon --stacktrace
             cp app/build/outputs/apk/release/app-release.apk ../../LN-DaTeh-GPS.apk
             echo "SIGNED=release" >> $GITHUB_ENV
           else
             echo "::warning::Chua cai secret ANDROID_KEYSTORE_B64 - build ban debug (khong cai de len ban cu duoc)"
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew assembleDebug --no-daemon --stacktrace
             cp app/build/outputs/apk/debug/app-debug.apk ../../LN-DaTeh-GPS.apk
             echo "SIGNED=debug" >> $GITHUB_ENV
           fi
