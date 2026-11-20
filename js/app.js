@@ -546,8 +546,9 @@ function pickPhoto(capture) {
     i.onchange = () => res(i.files[0]); i.click();
   });
 }
-async function storePhoto(file, f, shotTime) {
+async function storePhoto(file, f, shotTime, shotHeading) {
   shotTime = shotTime || Date.now();
+  const hdg = shotHeading !== undefined ? shotHeading : S.heading;
   const bmp = await createImageBitmap(file).catch(() => null);
   let blob = file;
   if (bmp) {
@@ -557,10 +558,10 @@ async function storePhoto(file, f, shotTime) {
     if (S.set.stampPhoto) {
       const lines = [fmtDate(shotTime)];
       if (S.pos) { const r = CRS.fromWGS(S.set.crs, S.pos.ll.lng, S.pos.ll.lat); lines.push(`${r.la}: ${r.a}  ${r.lb}: ${r.b}  (±${S.pos.acc.toFixed(0)}m)`); lines.push(CRS.BY[S.set.crs].name); }
-      if (f.name) lines.push(f.name);
-      if (S.heading != null) lines.push('Hướng chụp: ' + Math.round(S.heading) + '° ' + dirName(S.heading));
+      if (f.name && !/^Ảnh \d/.test(f.name)) lines.push(f.name);
+      if (hdg != null) lines.push('Hướng chụp: ' + Math.round(hdg) + '° ' + dirName(hdg));
       lines.push('LN DaTeh GPS' + (S.set.surveyor ? ' - ' + S.set.surveyor : ''));
-      const fs = Math.max(14, Math.round(c.width / 42));
+      const fs = Math.max(16, Math.round(Math.max(c.width, c.height) / 52));
       x.font = `600 ${fs}px sans-serif`;
       const hgt = lines.length * fs * 1.3 + fs * 0.6;
       x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, c.height - hgt, c.width, hgt);
@@ -569,7 +570,7 @@ async function storePhoto(file, f, shotTime) {
     blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
   }
   const pid = 'ph_' + uid();
-  await DB.put('photos', pid, { blob, t: shotTime, ll: S.pos ? [S.pos.ll.lng, S.pos.ll.lat] : null, h: S.heading });
+  await DB.put('photos', pid, { blob, t: shotTime, ll: S.pos ? [S.pos.ll.lng, S.pos.ll.lat] : null, h: hdg });
   return pid;
 }
 async function renderPhotos(f, el) {
@@ -1360,6 +1361,7 @@ async function openCamera(featId) {
   try { await startStream(); }
   catch (e) { closeCamera(); toast('Không mở được camera tích hợp, dùng camera của máy'); return cameraFallback(); }
   $('#camInfo').innerHTML = camInfoText(); camTargetText();
+  if (!S.set.surveyor) toast('Gợi ý: nhập Họ tên người thu thập trong Menu → Cài đặt để in lên ảnh', 4000);
   CAM.timer = setInterval(() => { $('#camInfo').innerHTML = camInfoText(); }, 500);
   history.pushState({ cam: 1 }, '');
 }
@@ -1376,15 +1378,16 @@ async function cameraFallback() {
   const file = await pickPhoto(true); if (!file) return;
   await savePhotoShot(file, Date.now());
 }
-async function savePhotoShot(blob, t) {
+async function savePhotoShot(blob, t, hdg) {
+  if (hdg === undefined) hdg = S.heading;
   let f = CAM.featId && S.feats.get(CAM.featId);
   if (!f) {
     if (!S.pos) { toast('Chưa có GPS — ảnh được lưu tại tâm bản đồ'); }
     const ll = S.pos ? S.pos.ll : map.getCenter();
-    f = newFeature('point', { type: 'Point', coordinates: [+ll.lng.toFixed(7), +ll.lat.toFixed(7)] }, { name: 'Ảnh ' + fmtDate(t).slice(3), acc: S.pos ? S.pos.acc : null, alt: S.pos ? S.pos.alt : null, note: S.heading != null ? `Hướng chụp ${Math.round(S.heading)}° ${dirName(S.heading)}` : '' });
+    f = newFeature('point', { type: 'Point', coordinates: [+ll.lng.toFixed(7), +ll.lat.toFixed(7)] }, { name: 'Ảnh ' + fmtDate(t).slice(3), acc: S.pos ? S.pos.acc : null, alt: S.pos ? S.pos.alt : null, note: hdg != null ? `Hướng chụp ${Math.round(hdg)}° ${dirName(hdg)}` : '' });
     if (CAM.multi || CAM.fixed) CAM.featId = f.id;
   }
-  const pid = await storePhoto(blob, f, t);
+  const pid = await storePhoto(blob, f, t, hdg);
   f.photos = f.photos || []; f.photos.push(pid);
   await saveFeature(f);
   if (!CAM.multi && !CAM.fixed) CAM.lastId = f.id; else CAM.lastId = f.id;
@@ -1392,14 +1395,14 @@ async function savePhotoShot(blob, t) {
 }
 $('#camShot').onclick = async () => {
   if (CAM.busy) return; CAM.busy = true;
-  const v = $('#camVideo'), t = Date.now();
+  const v = $('#camVideo'), t = Date.now(), hdg = S.heading;
   try {
     const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext('2d').drawImage(v, 0, 0);
     $('#camFlash').classList.add('on'); setTimeout(() => $('#camFlash').classList.remove('on'), 60);
     if (navigator.vibrate) navigator.vibrate(30);
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
-    const f = await savePhotoShot(blob, t);
+    const f = await savePhotoShot(blob, t, hdg);
     const p = await DB.get('photos', f.photos[f.photos.length - 1]);
     if (p) { const u = URL.createObjectURL(p.blob); $('#camThumb').style.backgroundImage = `url(${u})`; }
     camTargetText(); toast('Đã lưu ảnh · ' + (f.name || 'điểm'), 1200);
