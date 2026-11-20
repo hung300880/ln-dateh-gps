@@ -1326,7 +1326,9 @@ document.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTra
 // Mở file được chia sẻ tới ứng dụng (File Handling API)
 if ('launchQueue' in window) launchQueue.setConsumer(async p => { for (const h of p.files || []) importFile(await h.getFile()); });
 
-loadAll().then(() => { startGPS(); if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); })
+loadAll().then(() => { startGPS();
+  // Tự bật la bàn nếu máy không yêu cầu xin quyền (Android); iPhone cần chạm nút 🧭
+  if (!(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')) startCompass(); if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); })
   .catch(e => { console.error(e); toast('Lỗi khởi động: ' + e.message, 5000); startGPS(); });
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !NATIVE) navigator.serviceWorker.register('sw.js').catch(() => { });
 $('#btnLocate').classList.add('active');
