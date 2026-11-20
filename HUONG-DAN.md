@@ -75,3 +75,9 @@
 3. **Điều khoản sử dụng bản đồ nền**: Google, Mapbox, OSM và Esri đều hạn chế việc tải bản đồ về hàng loạt. Đơn vị chỉ nên tải vùng nhỏ phục vụ công tác, hoặc dùng nguồn bản đồ đơn vị có quyền sử dụng.
 4. **Kinh tuyến trục VN2000**: đang theo 63 tỉnh, thành cũ. Sau khi sáp nhập tỉnh năm 2025, cần chọn đúng kinh tuyến trục mà hồ sơ địa chính hoặc hồ sơ lâm nghiệp đang dùng. Ví dụ: Lâm Đồng cũ 107°45′, Đắk Nông cũ và Bình Thuận cũ 108°30′.
 5. **Bảo mật dữ liệu**: dữ liệu chỉ lưu trong máy, không gửi lên máy chủ nào. Cần sao lưu định kỳ (Menu → Sao lưu).
+
+## 6. Cập nhật phiên bản (bản APK)
+
+- Từ bản ký số chính thức trở đi, mọi bản APK đều ký bằng khóa cố định của Công ty, **cài đè trực tiếp, không mất dữ liệu**.
+- Khi có bản mới, ứng dụng hiện thanh thông báo "Có phiên bản mới" → bấm **Cập nhật** → tải về → **Mở** → **Cập nhật**. Có thể kiểm tra thủ công: Menu → 🔄 Kiểm tra cập nhật.
+- Khóa ký số (`lndateh-release.jks` + mật khẩu) do Công ty quản lý như tài liệu mật; mất khóa thì mọi máy phải gỡ ra cài lại.
