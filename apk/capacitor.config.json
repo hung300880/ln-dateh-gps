@@ -1,0 +1,6 @@
+{
+  "appId": "vn.lamnghiepdateh.gps",
+  "appName": "LN DaTeh GPS",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

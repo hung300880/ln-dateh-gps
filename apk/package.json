@@ -1,0 +1,16 @@
+{
+  "name": "ln-dateh-gps",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "sync-web": "rm -rf www && mkdir www && cp -r ../index.html ../mbtiles-tool.html ../css ../js ../vendor ../icons ../manifest.webmanifest www/"
+  },
+  "dependencies": {
+    "@capacitor-community/background-geolocation": "1.2.17",
+    "@capacitor/android": "6.1.2",
+    "@capacitor/cli": "6.1.2",
+    "@capacitor/core": "6.1.2",
+    "@capacitor/filesystem": "^6.0.1",
+    "@capacitor/share": "^6.0.2"
+  }
+}

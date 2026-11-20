@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Công cụ MBTiles</title>
+<link rel="icon" href="icons/icon.svg">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<style>
+:root { --g:#1b5e20; --g2:#2e7d32; --line:#d6e2d6; --bg:#fff; --fg:#1a1a1a; --mut:#5f6f5f; --light:#eef6ee; }
+@media (prefers-color-scheme: dark) { :root { --bg:#141a14; --fg:#e6eee6; --line:#2c3a2c; --mut:#9ab09a; --light:#1d2b1d; } }
+* { box-sizing: border-box; }
+body { margin:0; font-family: system-ui, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:flex; flex-direction:column; font-size:14px; }
+header { background:var(--g); color:#fff; padding:10px 16px; display:flex; align-items:center; gap:12px; }
+header h1 { font-size:17px; margin:0; flex:1; }
+header a { color:#c8e6c9; }
+main { flex:1; display:flex; min-height:0; }
+aside { width:400px; max-width:45vw; overflow:auto; border-right:1px solid var(--line); padding:12px 14px; }
+#map { flex:1; }
+@media (max-width:760px) { main { flex-direction:column; } aside { width:auto; max-width:none; height:50%; border-right:none; border-bottom:1px solid var(--line); } }
+.tabs { display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; }
+.tabs button { flex:1; border:1px solid var(--line); background:var(--light); color:var(--fg); padding:8px 6px; border-radius:8px; cursor:pointer; font-size:13px; }
+.tabs button.on { background:var(--g2); color:#fff; border-color:var(--g2); }
+.btn { border:1px solid var(--line); background:var(--bg); color:var(--fg); border-radius:8px; padding:8px 12px; cursor:pointer; font-size:14px; }
+.btn.p { background:var(--g2); color:#fff; border-color:var(--g2); }
+label { display:block; margin:10px 0 4px; font-weight:600; color:var(--mut); font-size:12.5px; }
+input, select, textarea { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--fg); font:inherit; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+td, th { border-bottom:1px solid var(--line); padding:5px 4px; text-align:left; vertical-align:top; word-break:break-word; }
+.row { display:flex; gap:8px; align-items:end; } .row > * { flex:1; }
+.note { background:var(--light); border-left:3px solid var(--g2); padding:8px 10px; border-radius:6px; font-size:12.5px; margin:10px 0; }
+.mut { color:var(--mut); font-size:12.5px; }
+.hide { display:none; }
+#log { font-size:12.5px; color:var(--mut); margin-top:8px; white-space:pre-wrap; }
+.drop { border:2px dashed var(--line); border-radius:10px; padding:18px; text-align:center; color:var(--mut); cursor:pointer; }
+</style>
+</head>
+<body>
+<header><h1>🗺️ Công cụ biên tập MBTiles — LN DaTeh GPS</h1><a href="index.html">Mở ứng dụng ›</a></header>
+<main>
+<aside>
+  <div class="tabs"><button data-t="view" class="on">Xem & sửa</button><button data-t="vec">GeoJSON → MBTiles</button><button data-t="ras">Tải nền → MBTiles</button></div>
+
+  <section id="t-view">
+    <div class="drop" id="drop">Kéo-thả file .mbtiles vào đây<br>hoặc bấm để chọn</div>
+    <input type="file" id="fOpen" accept=".mbtiles" class="hide">
+    <div id="info" class="hide">
+      <h3 id="iName" style="margin:12px 0 4px"></h3><div class="mut" id="iSum"></div>
+      <label>Độ trong suốt</label><input type="range" id="iOp" min="0.1" max="1" step="0.1" value="1">
+      <h4>Siêu dữ liệu (metadata) — sửa trực tiếp</h4>
+      <table id="iMeta"></table>
+      <div class="row" style="margin-top:6px"><input id="nk" placeholder="khóa mới"><input id="nv" placeholder="giá trị"><button class="btn" id="addMeta" style="flex:none">+</button></div>
+      <h4>Số ô theo mức zoom</h4><table id="iZoom"></table>
+      <div class="row" style="margin-top:8px"><button class="btn" id="fitB">Cập nhật bounds/center theo dữ liệu</button><button class="btn p" id="saveMb">💾 Lưu file MBTiles</button></div>
+      <h4>Thuộc tính đối tượng (chạm vào bản đồ)</h4><div id="attr" class="mut">Lớp vector: bấm vào đường/vùng/điểm trên bản đồ.</div>
+    </div>
+  </section>
+
+  <section id="t-vec" class="hide">
+    <div class="note">Chuyển GeoJSON (xuất từ QGIS/ArcGIS: đường bình độ, ranh giới lô/khoảnh/tiểu khu, hiện trạng rừng…) thành MBTiles vector để mở trên điện thoại, <b>giữ nguyên thuộc tính</b>.</div>
+    <label>File GeoJSON (có thể chọn nhiều — mỗi file 1 lớp)</label><input type="file" id="gjF" accept=".geojson,.json" multiple>
+    <label>Hệ tọa độ của file</label><select id="gjC"></select>
+    <div class="row"><div><label>Zoom nhỏ nhất</label><input type="number" id="gjMin" value="10"></div><div><label>Zoom lớn nhất</label><input type="number" id="gjMax" value="16"></div></div>
+    <label>Mức đơn giản hóa (tolerance, 0 = giữ nguyên)</label><input type="number" id="gjTol" value="2" step="0.5">
+    <label>Tên bộ dữ liệu</label><input id="gjName" value="Ban do lam nghiep Da Teh">
+    <div style="margin-top:12px"><button class="btn p" id="gjGo">⚙️ Tạo MBTiles vector</button></div>
+  </section>
+
+  <section id="t-ras" class="hide">
+    <div class="note">Tải bản đồ nền trong khung nhìn hiện tại thành một file MBTiles raster, chép sang điện thoại để dùng offline. Chỉ dùng nguồn mà đơn vị được phép tải.</div>
+    <label>Nguồn ô bản đồ (XYZ)</label>
+    <select id="rsSrc">
+      <option value="https://a.tile.opentopomap.org/{z}/{x}/{y}.png">OpenTopoMap (địa hình, bình độ)</option>
+      <option value="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}">Esri World Imagery (vệ tinh)</option>
+      <option value="custom">Tùy chỉnh…</option>
+    </select>
+    <input id="rsUrl" class="hide" placeholder="https://…/{z}/{x}/{y}.png" style="margin-top:6px">
+    <div class="row"><div><label>Zoom từ</label><input type="number" id="rsMin" value="12"></div><div><label>đến</label><input type="number" id="rsMax" value="16"></div></div>
+    <label>Tên</label><input id="rsName" value="Nen offline Da Teh">
+    <div class="mut" id="rsCnt"></div>
+    <div style="margin-top:12px"><button class="btn p" id="rsGo">⬇️ Tải và tạo MBTiles</button> <button class="btn" id="rsStop">Dừng</button></div>
+  </section>
+  <div id="log"></div>
+</aside>
+<div id="map"></div>
+</main>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/proj4.js"></script>
+<script src="vendor/sql-wasm.js"></script>
+<script src="vendor/vt.js"></script>
+<script src="js/crs.js"></script>
+<script src="js/mbtiles.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const log = t => $('#log').textContent = t;
+const map = L.map('map').setView([11.53, 107.53], 11);
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenTopoMap © OSM' }).addTo(map);
+L.control.scale({ imperial: false }).addTo(map);
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  ['view', 'vec', 'ras'].forEach(t => $('#t-' + t).classList.toggle('hide', t !== b.dataset.t));
+  updCount();
+});
+$('#gjC').innerHTML = CRS.LIST.map(c => `<option value="${c.id}" ${c.id === 'WGS84' ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+
+/* ===== Xem & sửa ===== */
+let cur = null, curLayer = null;
+$('#drop').onclick = () => $('#fOpen').click();
+$('#fOpen').onchange = e => e.target.files[0] && openMb(e.target.files[0]);
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && /mbtiles$/i.test(f.name)) openMb(f); });
+async function openMb(file, buf) {
+  log('Đang mở ' + (file.name || file) + '…');
+  if (cur) { curLayer.remove(); cur.close(); }
+  cur = await MBT.open(buf || await file.arrayBuffer(), file.name || file);
+  curLayer = MBT.makeLayer(cur, { zIndex: 50 }).addTo(map);
+  if (cur.bounds) map.fitBounds(cur.bounds);
+  $('#info').classList.remove('hide');
+  $('#iName').textContent = cur.name;
+  $('#iSum').textContent = `${curLayer.isVector ? 'Vector (pbf)' : 'Raster ' + cur.format} · zoom ${cur.minz}–${cur.maxz}` + (cur.vlayers.length ? ' · lớp: ' + cur.vlayers.join(', ') : '');
+  drawMeta(); drawZoom(); log('');
+}
+function drawMeta() {
+  const r = cur.db.exec('SELECT rowid, name, value FROM metadata');
+  const rows = r[0] ? r[0].values : [];
+  $('#iMeta').innerHTML = rows.map(([id, k, v]) => `<tr><td style="width:30%">${esc(k)}</td><td>${k === 'json' ? `<textarea data-id="${id}" rows="4">${esc(v)}</textarea>` : `<input data-id="${id}" value="${esc(v)}">`}</td><td style="width:28px"><button class="btn" data-del="${id}">✕</button></td></tr>`).join('');
+  $('#iMeta').querySelectorAll('[data-id]').forEach(i => i.onchange = () => cur.db.run('UPDATE metadata SET value=? WHERE rowid=?', [i.value, +i.dataset.id]));
+  $('#iMeta').querySelectorAll('[data-del]').forEach(b => b.onclick = () => { cur.db.run('DELETE FROM metadata WHERE rowid=?', [+b.dataset.del]); drawMeta(); });
+}
+$('#addMeta').onclick = () => { if (!$('#nk').value) return; cur.db.run('INSERT INTO metadata VALUES (?,?)', [$('#nk').value, $('#nv').value]); $('#nk').value = $('#nv').value = ''; drawMeta(); };
+function drawZoom() {
+  const r = cur.db.exec('SELECT zoom_level, COUNT(*), SUM(LENGTH(tile_data)) FROM tiles GROUP BY zoom_level ORDER BY zoom_level');
+  $('#iZoom').innerHTML = '<tr><th>Zoom</th><th>Số ô</th><th>Dung lượng</th><th></th></tr>' + (r[0] ? r[0].values.map(([z, n, s]) => `<tr><td>${z}</td><td>${n}</td><td>${(s / 1048576).toFixed(2)} MB</td><td><button class="btn" data-z="${z}" title="Xóa mức zoom">✕</button></td></tr>`).join('') : '');
+  $('#iZoom').querySelectorAll('[data-z]').forEach(b => b.onclick = () => { if (!confirm('Xóa toàn bộ ô ở zoom ' + b.dataset.z + '?')) return; cur.db.run('DELETE FROM tiles WHERE zoom_level=?', [+b.dataset.z]); drawZoom(); });
+}
+$('#iOp').oninput = () => curLayer && curLayer.setOpacity(+$('#iOp').value);
+$('#fitB').onclick = () => {
+  const r = cur.db.exec('SELECT MAX(zoom_level) FROM tiles')[0].values[0][0];
+  const e = cur.db.exec('SELECT MIN(tile_column), MAX(tile_column), MIN(tile_row), MAX(tile_row) FROM tiles WHERE zoom_level=?', [r])[0].values[0];
+  const n = 1 << r, lon = x => x / n * 360 - 180, lat = y => { const t = Math.PI - 2 * Math.PI * y / n; return 180 / Math.PI * Math.atan(Math.sinh(t)); };
+  const yN = n - 1 - e[3], yS = n - 1 - e[2] + 1;
+  const b = [lon(e[0]), lat(yS), lon(e[1] + 1), lat(yN)].map(v => +v.toFixed(6));
+  setMeta('bounds', b.join(',')); setMeta('center', [((b[0] + b[2]) / 2).toFixed(6), ((b[1] + b[3]) / 2).toFixed(6), r].join(','));
+  const z = cur.db.exec('SELECT MIN(zoom_level), MAX(zoom_level) FROM tiles')[0].values[0];
+  setMeta('minzoom', z[0]); setMeta('maxzoom', z[1]); drawMeta(); log('Đã cập nhật bounds, center, minzoom, maxzoom.');
+};
+function setMeta(k, v) { cur.db.run('DELETE FROM metadata WHERE name=?', [k]); cur.db.run('INSERT INTO metadata VALUES (?,?)', [k, String(v)]); }
+$('#saveMb').onclick = () => download(cur.db.export(), (cur.name || 'data').replace(/\.mbtiles$/i, '') + '.mbtiles');
+function download(u8, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], { type: 'application/x-sqlite3' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000); }
+map.on('click', e => {
+  if (!curLayer || !curLayer.isVector) return;
+  const hits = curLayer.query(e.latlng, map);
+  $('#attr').innerHTML = hits.length ? hits.map(h => `<b>Lớp: ${esc(h.layer)}</b><table>${Object.keys(h.props).map(k => `<tr><td>${esc(k)}</td><td>${esc(h.props[k])}</td></tr>`).join('')}</table>`).join('<hr>') : 'Không có đối tượng tại vị trí này.';
+  if (hits.length) L.popup().setLatLng(e.latlng).setContent($('#attr').innerHTML).openOn(map);
+});
+
+/* ===== GeoJSON -> MBTiles vector ===== */
+function reproject(gj, crs) {
+  if (crs === 'WGS84' || crs === 'WGS84DMS') return gj;
+  const tr = c => { const w = proj4(crs, 'WGS84', [c[0], c[1]]); return [w[0], w[1]]; };
+  const walk = c => typeof c[0] === 'number' ? tr(c) : c.map(walk);
+  gj.features.forEach(f => f.geometry && (f.geometry.coordinates = walk(f.geometry.coordinates)));
+  return gj;
+}
+async function gzip(u8) { const cs = new CompressionStream('gzip'); return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(cs)).arrayBuffer()); }
+$('#gjGo').onclick = async () => {
+  const files = [...$('#gjF').files]; if (!files.length) return log('Chọn file GeoJSON');
+  const minz = +$('#gjMin').value, maxz = +$('#gjMax').value, tol = +$('#gjTol').value;
+  const layers = {}, vl = []; let bb = [180, 90, -180, -90];
+  for (const f of files) {
+    log('Đọc ' + f.name + '…');
+    let gj = JSON.parse(await f.text()); if (gj.type !== 'FeatureCollection') gj = { type: 'FeatureCollection', features: gj.type === 'Feature' ? [gj] : [] };
+    gj = reproject(gj, $('#gjC').value);
+    const name = f.name.replace(/\.(geo)?json$/i, '').replace(/[^A-Za-z0-9_]/g, '_');
+    const fields = {};
+    gj.features.forEach(ft => { Object.keys(ft.properties || {}).forEach(k => fields[k] = typeof ft.properties[k] === 'number' ? 'Number' : 'String'); });
+    const ext = L.geoJSON(gj).getBounds();
+    if (ext.isValid()) bb = [Math.min(bb[0], ext.getWest()), Math.min(bb[1], ext.getSouth()), Math.max(bb[2], ext.getEast()), Math.max(bb[3], ext.getNorth())];
+    layers[name] = VT.geojsonvt(gj, { maxZoom: maxz, indexMaxZoom: maxz, indexMaxPoints: 0, tolerance: tol, extent: 4096, buffer: 64 });
+    vl.push({ id: name, fields, minzoom: minz, maxzoom: maxz });
+  }
+  const meta = { name: $('#gjName').value, format: 'pbf', type: 'overlay', version: '1.0', minzoom: minz, maxzoom: maxz, bounds: bb.map(v => v.toFixed(6)).join(','), center: [((bb[0] + bb[2]) / 2).toFixed(6), ((bb[1] + bb[3]) / 2).toFixed(6), minz].join(','), json: JSON.stringify({ vector_layers: vl }), description: 'Tạo bởi LN DaTeh GPS', attribution: 'Công ty TNHH MTV LN Đạ Tẻh' };
+  const db = await MBT.create(meta);
+  const ins = db.prepare('INSERT OR REPLACE INTO tiles VALUES (?,?,?,?)');
+  let n = 0;
+  db.run('BEGIN');
+  for (let z = minz; z <= maxz; z++) {
+    const n2 = 1 << z;
+    const x0 = Math.floor((bb[0] + 180) / 360 * n2), x1 = Math.floor((bb[2] + 180) / 360 * n2);
+    const ly = lat => Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n2);
+    const y0 = ly(bb[3]), y1 = ly(bb[1]);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const tl = {};
+      for (const k in layers) { const t = layers[k].getTile(z, x, y); if (t && t.features.length) tl[k] = t; }
+      if (!Object.keys(tl).length) continue;
+      const buf = VT.vtpbf.fromGeojsonVt(tl, { version: 2 });
+      ins.run([z, x, n2 - 1 - y, await gzip(buf)]); n++;
+    }
+    log(`Zoom ${z}: tổng ${n} ô…`); await new Promise(r => setTimeout(r));
+  }
+  db.run('COMMIT'); ins.free();
+  log(`Hoàn tất: ${n} ô. Đang mở để kiểm tra…`);
+  const out = db.export(); db.close();
+  download(out, $('#gjName').value.replace(/[^A-Za-z0-9_ ]/g, '').replace(/ +/g, '_') + '.mbtiles');
+  openMb({ name: $('#gjName').value + '.mbtiles' }, out.buffer);
+};
+
+/* ===== Tải nền -> MBTiles raster ===== */
+$('#rsSrc').onchange = () => $('#rsUrl').classList.toggle('hide', $('#rsSrc').value !== 'custom');
+function tilesInView() {
+  const b = map.getBounds(), list = [];
+  for (let z = +$('#rsMin').value; z <= +$('#rsMax').value; z++) {
+    const p1 = map.project(b.getNorthWest(), z).divideBy(256).floor(), p2 = map.project(b.getSouthEast(), z).divideBy(256).floor();
+    for (let x = p1.x; x <= p2.x; x++) for (let y = p1.y; y <= p2.y; y++) list.push([z, x, y]);
+  }
+  return list;
+}
+function updCount() { $('#rsCnt').textContent = 'Số ô trong khung nhìn: ' + tilesInView().length; }
+map.on('moveend', updCount); $('#rsMin').oninput = $('#rsMax').oninput = updCount;
+let stop = false; $('#rsStop').onclick = () => stop = true;
+$('#rsGo').onclick = async () => {
+  const tpl = $('#rsSrc').value === 'custom' ? $('#rsUrl').value : $('#rsSrc').value;
+  const list = tilesInView(); if (list.length > 30000) return log('Quá nhiều ô (' + list.length + '). Thu nhỏ vùng hoặc giảm zoom.');
+  const b = map.getBounds();
+  const db = await MBT.create({ name: $('#rsName').value, format: tpl.includes('.jpg') || tpl.includes('World_Imagery') ? 'jpg' : 'png', type: 'baselayer', minzoom: $('#rsMin').value, maxzoom: $('#rsMax').value, bounds: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(6)).join(',') });
+  const ins = db.prepare('INSERT OR REPLACE INTO tiles VALUES (?,?,?,?)');
+  stop = false; let ok = 0, bad = 0;
+  const work = async () => { while (list.length && !stop) { const [z, x, y] = list.pop();
+    try { const r = await fetch(tpl.replace('{z}', z).replace('{x}', x).replace('{y}', y)); if (!r.ok) throw 0; ins.run([z, x, (1 << z) - 1 - y, new Uint8Array(await r.arrayBuffer())]); ok++; } catch (e) { bad++; }
+    if ((ok + bad) % 20 === 0) log(`Đã tải ${ok}, lỗi ${bad}, còn ${list.length}`); } };
+  await Promise.all([1, 2, 3, 4, 5, 6].map(work));
+  ins.free(); log(`Xong: ${ok} ô, lỗi ${bad}.`);
+  const out = db.export(); db.close();
+  download(out, $('#rsName').value.replace(/ +/g, '_') + '.mbtiles');
+};
+updCount();
+</script>
+</body>
+</html>

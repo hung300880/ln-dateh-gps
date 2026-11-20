@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LN DaTeh GPS</string>
+    <string name="title_activity_main">LN DaTeh GPS</string>
+    <string name="package_name">vn.lamnghiepdateh.gps</string>
+    <string name="custom_url_scheme">vn.lamnghiepdateh.gps</string>
+</resources>

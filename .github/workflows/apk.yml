@@ -1,0 +1,41 @@
+name: Build APK Android
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Cai thu vien va dong bo web vao Android
+        working-directory: apk
+        run: |
+          npm ci
+          npm run sync-web
+          npx cap sync android
+      - name: Build APK
+        working-directory: apk/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../../LN-DaTeh-GPS.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LN-DaTeh-GPS-apk
+          path: LN-DaTeh-GPS.apk
+      - name: Phat hanh ban tai ve (Releases)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" LN-DaTeh-GPS.apk --title "LN DaTeh GPS $TAG" --notes "Ban APK cai dat truc tiep tren Android (cho phep cai tu nguon khong xac dinh)."
