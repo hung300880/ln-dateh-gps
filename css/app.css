@@ -133,3 +133,6 @@ video.scan { width: 100%; border-radius: 10px; background: #000; }
 #updBar span { flex: 1; }
 #updBar .icon-btn { color: #fff; width: 32px; height: 32px; font-size: 18px; }
 .photos .ph button.sv { top: auto; bottom: 2px; background: rgba(46,125,50,.85); }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.brand img { width: 58px; height: 58px; }
+.brand b { font-size: 17px; color: var(--green2); }

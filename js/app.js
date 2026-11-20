@@ -569,6 +569,7 @@ async function storePhoto(file, f, shotTime, shotHeading) {
       const hgt = lines.length * fs * 1.3 + fs * 0.6;
       x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, c.height - hgt, c.width, hgt);
       x.fillStyle = '#fff'; lines.forEach((t, i) => x.fillText(t, fs * 0.6, c.height - hgt + fs * 1.15 + i * fs * 1.3));
+      const lg = await logoImg(); if (lg) { const ls = Math.min(hgt - fs * 0.6, c.width * 0.22); x.drawImage(lg, c.width - ls - fs * 0.5, c.height - hgt + (hgt - ls) / 2, ls, ls); }
     }
     blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
   }
@@ -730,7 +731,7 @@ function mainMenu() {
       ['🗺️', 'Bản đồ nền & tải offline', layersSheet], ['🛰️', 'Ảnh vệ tinh Landsat 8/Sentinel 2', satSheet], ['🧭', 'La bàn số', compassSheet],
       ['⚙️', 'Cài đặt', settingsSheet], ['💾', 'Sao lưu / phục hồi', backupSheet], ['ℹ️', 'Hướng dẫn', helpSheet]
     ];
-    body.innerHTML = `<div class="menu-grid">${items.map((it, i) => `<button data-i="${i}"><i>${it[0]}</i>${it[1]}</button>`).join('')}</div>
+    body.innerHTML = `<div class="brand"><img src="icons/logo-256.png" alt=""><div><b>LN DaTeh GPS</b><br><span class="muted">Công ty TNHH MTV Lâm nghiệp Đạ Tẻh</span></div></div><div class="menu-grid">${items.map((it, i) => `<button data-i="${i}"><i>${it[0]}</i>${it[1]}</button>`).join('')}</div>
       <div class="gap"></div><button class="btn block" id="mnUpd">🔄 Kiểm tra cập nhật</button>
       <p class="muted" style="text-align:center;margin-top:14px">Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>Phiên bản ${esc(APP_VERSION)}${NATIVE ? ' (APK)' : ' (web)'} · ${S.feats.size} đối tượng</p>`;
     $('#mnUpd').onclick = () => { closeSheet(); checkUpdate(true); };
@@ -1339,6 +1340,9 @@ const helpSheet = sheetFn('Hướng dẫn nhanh', body => {
   <p>• Nhấn giữ bản đồ: xem tọa độ VN2000 tại điểm, tạo điểm, dẫn đường.<br>• Chạm dòng hệ tọa độ trên thanh trạng thái để đổi hệ VN2000 theo tỉnh.<br>• Chạm đối tượng trên lớp MBTiles vector để xem thuộc tính.<br>• Mẫu biểu chia sẻ qua QR: Menu → Mẫu biểu → QR.</p>`;
 });
 
+
+let _logo;
+function logoImg() { if (!_logo) _logo = new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'icons/logo-256.png'; }); return _logo; }
 
 /* ================= Lưu ảnh vào Bộ sưu tập ================= */
 async function saveToGallery(blob, t, name, notify) {
