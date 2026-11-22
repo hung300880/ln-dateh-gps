@@ -780,7 +780,7 @@ function mainMenu() {
     ];
     body.innerHTML = `<div class="brand"><img src="icons/logo-256.png" alt=""><div><b>LN DaTeh GPS</b><br><span class="muted">Công ty TNHH MTV Lâm nghiệp Đạ Tẻh</span></div></div><div class="menu-grid">${items.map((it, i) => `<button data-i="${i}"><i>${it[0]}</i>${it[1]}</button>`).join('')}</div>
       <div class="gap"></div><button class="btn block" id="mnUpd">🔄 Kiểm tra cập nhật</button>
-      <p class="muted" style="text-align:center;margin-top:14px">© 2026 Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>Chủ trì xây dựng: <b>Trần Trọng Hùng</b> – Giám đốc<br>Phiên bản ${esc(APP_VERSION)}${NATIVE ? ' (APK)' : ' (web)'} · ${S.feats.size} đối tượng</p>`;
+      <p class="muted" style="text-align:center;margin-top:14px">© 2026 <b>Trần Trọng Hùng</b> – Giám đốc<br>Đơn vị sử dụng: Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>Phiên bản ${esc(APP_VERSION)}${NATIVE ? ' (APK)' : ' (web)'} · ${S.feats.size} đối tượng</p>`;
     $('#mnUpd').onclick = () => { closeSheet(); checkUpdate(true); };
     body.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { const f = items[+b.dataset.i][2]; stack.length = 1; f(true); });
   });
@@ -1410,14 +1410,14 @@ const aboutSheet = sheetFn('Giới thiệu & bản quyền', body => {
     <div class="muted">Ứng dụng thu thập dữ liệu không gian thực địa phục vụ quản lý, bảo vệ rừng</div></div>
     <table class="kv" style="margin-top:14px">
       <tr><td>Phiên bản</td><td><b>${esc(APP_VERSION)}</b> ${NATIVE ? '(APK Android)' : '(web)'}</td></tr>
-      <tr><td>Đơn vị sở hữu</td><td>Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>tỉnh Lâm Đồng</td></tr>
-      <tr><td>Ý tưởng và chủ trì xây dựng</td><td><b>Trần Trọng Hùng</b><br>Giám đốc Công ty</td></tr>
+      <tr><td>Tác giả, chủ sở hữu</td><td><b>Trần Trọng Hùng</b><br>Giám đốc Công ty TNHH MTV Lâm nghiệp Đạ Tẻh</td></tr>
+      <tr><td>Đơn vị sử dụng</td><td>Công ty TNHH MTV Lâm nghiệp Đạ Tẻh<br>tỉnh Lâm Đồng</td></tr>
       <tr><td>Năm phát hành</td><td>2026</td></tr>
-      <tr><td>Phạm vi sử dụng</td><td>Sử dụng nội bộ, không phân phối thương mại</td></tr>
+      <tr><td>Phạm vi sử dụng</td><td>Công ty TNHH MTV Lâm nghiệp Đạ Tẻh được sử dụng miễn phí; không phân phối thương mại</td></tr>
       <tr><td>Thư viện mã nguồn mở</td><td>Leaflet, Leaflet-Rotate, Proj4js, sql.js, SheetJS, toGeoJSON, jsQR, qrcode-generator, Capacitor</td></tr>
       <tr><td>Dữ liệu bản đồ nền</td><td>© OpenStreetMap, © OpenTopoMap, © Esri, © Mapbox; ảnh vệ tinh Sentinel-2, Landsat qua Microsoft Planetary Computer</td></tr>
     </table>
-    <p class="muted" style="text-align:center;margin-top:16px">© 2026 Công ty TNHH MTV Lâm nghiệp Đạ Tẻh. Bảo lưu mọi quyền.</p>
+    <p class="muted" style="text-align:center;margin-top:16px">© 2026 Trần Trọng Hùng. Bảo lưu mọi quyền.</p>
     <button class="btn block" id="abUpd">🔄 Kiểm tra cập nhật</button>`;
   $('#abUpd').onclick = () => { closeSheet(); checkUpdate(true); };
 });
