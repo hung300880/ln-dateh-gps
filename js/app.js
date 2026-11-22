@@ -1404,6 +1404,7 @@ const settingsSheet = sheetFn('Cài đặt', body => {
 });
 
 /* ======= Hướng dẫn ======= */
+function openGuide() { if (NATIVE) window.location.href = GUIDE_URL; else window.open(GUIDE_URL, '_blank'); }
 const aboutSheet = sheetFn('Giới thiệu & bản quyền', body => {
   body.innerHTML = `<div style="text-align:center"><img src="icons/logo-256.png" alt="" style="width:120px;height:120px">
     <h2 style="margin:8px 0 2px;color:var(--green2)">LN DaTeh GPS</h2>
@@ -1421,15 +1422,17 @@ const aboutSheet = sheetFn('Giới thiệu & bản quyền', body => {
     <button class="btn block" id="abUpd">🔄 Kiểm tra cập nhật</button>`;
   $('#abUpd').onclick = () => { closeSheet(); checkUpdate(true); };
 });
+const GUIDE_URL = 'https://hung300880.github.io/ln-dateh-gps/huong-dan/SoTay_HuongDan_LN_DaTeh_GPS.pdf';
 const helpSheet = sheetFn('Hướng dẫn nhanh', body => {
-  body.innerHTML = `
+  body.innerHTML = `<button class="btn primary block" id="hpPdf">📘 Mở Sổ tay hướng dẫn đầy đủ (PDF, có hình ảnh)</button>
   <div class="sec">Cài đặt lên điện thoại</div>
-  <p>Android (Chrome): Menu ⋮ → <b>Thêm vào màn hình chính / Cài đặt ứng dụng</b>. iPhone (Safari): nút Chia sẻ → <b>Thêm vào MH chính</b>. Sau lần mở đầu, ứng dụng chạy được khi không có mạng.</p>
+  <p><b>Android:</b> cài file APK tải tại github.com/hung300880/ln-dateh-gps/releases/latest. <b>iPhone:</b> mở hung300880.github.io/ln-dateh-gps bằng Safari → nút Chia sẻ → <b>Thêm vào MH chính</b>. Chi tiết từng bước có hình trong Sổ tay ở trên.</p>
   <div class="sec">Thu thập</div>
   <p>📍 <b>Điểm</b>: tại GPS, lấy trung bình, tâm bản đồ, chạm, nhập tọa độ.<br>〰️ <b>Đường</b> / ⬠ <b>Vùng</b>: chạm bản đồ, nút "Đỉnh tại GPS", hoặc "🚶 Tự động" để đi bộ quanh lô — máy tự thêm đỉnh.<br>🛰️ <b>Tracklog</b>: bấm để bắt đầu/dừng; có thể vẽ điểm/đường/vùng cùng lúc.<br>📐 <b>Đo</b>: đo nhanh chiều dài, chu vi, diện tích (m², ha).</p>
   ${NATIVE ? '<div class="note">Bản APK: tracklog ghi nền cả khi tắt màn hình (có thông báo trên thanh trạng thái). Hãy cấp quyền vị trí "Luôn cho phép" và tắt tối ưu pin cho ứng dụng.</div>' : '<div class="note warn">Bản web: ứng dụng giữ màn hình sáng khi ghi tracklog. Nếu tắt màn hình, một số máy tạm dừng GPS của trình duyệt (dữ liệu không mất). Dùng bản APK để ghi nền hoàn toàn.</div>'}
   <div class="sec">Mẹo</div>
   <p>• Nhấn giữ bản đồ: xem tọa độ VN2000 tại điểm, tạo điểm, dẫn đường.<br>• Chạm dòng hệ tọa độ trên thanh trạng thái để đổi hệ VN2000 theo tỉnh.<br>• Chạm đối tượng trên lớp MBTiles vector để xem thuộc tính.<br>• Mẫu biểu chia sẻ qua QR: Menu → Mẫu biểu → QR.</p>`;
+  $('#hpPdf').onclick = openGuide;
 });
 
 

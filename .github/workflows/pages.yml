@@ -26,7 +26,7 @@ jobs:
           echo "window.APP_VERSION = '1.0.$N';" > js/version.js
           sed -i "s/const V = 'lndateh-v[0-9]*';/const V = 'lndateh-v$N';/" sw.js
           mkdir _site
-          cp -r index.html mbtiles-tool.html sw.js manifest.webmanifest css js vendor icons HUONG-DAN.md _site/
+          cp -r index.html mbtiles-tool.html sw.js manifest.webmanifest css js vendor icons huong-dan HUONG-DAN.md _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
