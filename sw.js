@@ -1,7 +1,7 @@
 /* Service worker: chạy offline */
 const V = 'lndateh-v3';
 const SHELL = ['./', 'index.html', 'mbtiles-tool.html', 'css/app.css', 'js/app.js', 'js/version.js', 'js/crs.js', 'js/db.js', 'js/mbtiles.js',
-  'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/proj4.js', 'vendor/togeojson.umd.js', 'vendor/sql-wasm.js', 'vendor/sql-wasm.wasm',
+  'vendor/leaflet.js', 'vendor/leaflet-rotate.js', 'vendor/leaflet.css', 'vendor/proj4.js', 'vendor/togeojson.umd.js', 'vendor/sql-wasm.js', 'vendor/sql-wasm.wasm',
   'vendor/vt.js', 'vendor/qrcode.js', 'vendor/jsQR.js', 'vendor/xlsx.full.min.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/logo-64.png', 'icons/logo-256.png', 'icons/icon-maskable-512.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'vendor/images/marker-icon.png', 'vendor/images/marker-icon-2x.png', 'vendor/images/marker-shadow.png', 'vendor/images/layers.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });

@@ -14,6 +14,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const NATIVE = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
 const PLG = NATIVE ? Capacitor.Plugins : {};
 if (NATIVE && !PLG.Gallery && Capacitor.registerPlugin) PLG.Gallery = Capacitor.registerPlugin('Gallery');
+if (NATIVE && !PLG.Compass && Capacitor.registerPlugin) PLG.Compass = Capacitor.registerPlugin('Compass');
 const APP_VERSION = window.APP_VERSION || 'dev';
 const REPO = 'hung300880/ln-dateh-gps';
 
@@ -45,7 +46,8 @@ const KIND = {
 };
 
 /* ================= Bản đồ ================= */
-const map = L.map('map', { zoomControl: false, attributionControl: true, maxZoom: 22, tap: true }).setView([11.53, 107.53], 12);
+const map = L.map('map', { zoomControl: false, attributionControl: true, maxZoom: 22, tap: true, rotate: true, touchRotate: false, shiftKeyRotate: false, bearing: 0, rotateControl: { closeOnZeroBearing: true, position: 'bottomleft' } }).setView([11.53, 107.53], 12);
+if (map.rotateControl && map.rotateControl.getContainer) map.rotateControl.getContainer().title = 'Bấm để đưa bản đồ về hướng Bắc';
 L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
 map.attributionControl.setPrefix('LN DaTeh GPS');
 
@@ -66,17 +68,17 @@ const OfflineTile = L.TileLayer.extend({
 });
 const BASES = {
   otm: { n: 'Địa hình (OpenTopoMap - có đường bình độ)', u: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', mz: 17, a: '© OpenTopoMap, © OSM' },
-  osm: { n: 'OpenStreetMap', u: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', mz: 19, a: '© OpenStreetMap' },
-  esri: { n: 'Ảnh vệ tinh (Esri World Imagery)', u: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', mz: 19, a: '© Esri' },
-  esritopo: { n: 'Esri World Topo', u: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', mz: 19, a: '© Esri' },
-  mbsat: { n: 'Mapbox vệ tinh (cần token)', u: 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token={token}', mz: 20, a: '© Mapbox', token: true },
+  osm: { n: 'OpenStreetMap', u: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', mz: 18, a: '© OpenStreetMap' },
+  esri: { n: 'Ảnh vệ tinh (Esri World Imagery)', u: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', mz: 18, a: '© Esri' },
+  esritopo: { n: 'Esri World Topo', u: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', mz: 18, a: '© Esri' },
+  mbsat: { n: 'Mapbox vệ tinh (cần token)', u: 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token={token}', mz: 18, a: '© Mapbox', token: true },
   mbout: { n: 'Mapbox Outdoors (cần token)', u: 'https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/256/{z}/{x}/{y}?access_token={token}', mz: 20, a: '© Mapbox', token: true },
   none: { n: 'Không nền (chỉ dữ liệu offline)', u: null }
 };
 let baseLayer = null;
 function allBases() {
   const o = Object.assign({}, BASES);
-  S.custom.forEach(c => o[c.id] = { n: c.name, u: c.url, mz: c.mz || 20, a: c.name });
+  S.custom.forEach(c => o[c.id] = { n: c.name, u: c.url, mz: c.mz || 18, a: c.name });
   return o;
 }
 function setBase(id) {
@@ -107,6 +109,7 @@ async function loadAll() {
   const all = await DB.all('features');
   all.forEach(f => { S.feats.set(f.id, f); render(f); });
   setBase(S.set.base);
+  await loadRefs();
   const v = await DB.get('kv', 'view');
   if (v) map.setView(v.c, v.z);
   else if (all.length) try { map.fitBounds(L.featureGroup(Object.values(groups)).getBounds(), { maxZoom: 16 }); } catch (e) { }
@@ -228,6 +231,8 @@ function onPos(p) {
   } else { gpsMarker.setLatLng(ll); accCircle.setLatLng(ll).setRadius(c.accuracy); }
   if (S.follow) map.panTo(ll, { animate: true });
   // Nếu không có la bàn, dùng hướng di chuyển
+  if (c.heading != null && !isNaN(c.heading) && c.speed > 0.8) S.moveHeading = c.heading;
+  if (S.rotMode === 2) applyRotation();
   if (S.heading == null && c.heading != null && !isNaN(c.heading) && c.speed > 0.8) drawCone(c.heading);
   else drawCone(S.heading);
   updateStatus();
@@ -273,25 +278,64 @@ function dirName(h) { return ['B', 'ĐB', 'Đ', 'ĐN', 'N', 'TN', 'T', 'TB'][Mat
 /* ======= La bàn số ======= */
 let compassOn = false;
 function onOrient(e) {
+  if (S.nativeCompass) return;
   let h = null;
   if (e.webkitCompassHeading != null) h = e.webkitCompassHeading;
   else if (e.absolute && e.alpha != null) h = 360 - e.alpha;
   if (h == null) return;
   const so = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-  h = (h + so + 360) % 360;
-  S.heading = S.heading == null ? h : smoothAngle(S.heading, h, 0.3);
+  onHeading((h + so + 360) % 360);
+}
+function onHeading(h) {
+  S.heading = S.heading == null ? h : smoothAngle(S.heading, h, 0.35);
+  applyRotation();
   drawCone(S.heading);
   updateStatus();
   const rose = document.querySelector('.compass .rose');
   if (rose) { rose.style.transform = `rotate(${-S.heading}deg)`; const v = $('#compassVal'); if (v) v.textContent = Math.round(S.heading) + '° ' + dirName(S.heading); }
   if (S.nav) updateNav();
 }
+/* ======= Xoay bản đồ: 0 = Bắc lên trên, 1 = theo la bàn, 2 = theo hướng đi ======= */
+const ROT_MODES = [{ ic: '🧭', t: 'Bản đồ: Bắc lên trên' }, { ic: '🧭', t: 'Bản đồ xoay theo la bàn' }, { ic: '🚶', t: 'Bản đồ xoay theo hướng đi' }];
+let rotLast = 0, rotBearing = 0;
+function rotHeading() {
+  if (S.rotMode === 1) return S.heading;
+  if (S.rotMode === 2) return S.moveHeading;
+  return null;
+}
+function applyRotation(force) {
+  if (!map.setBearing) return;
+  const h = rotHeading();
+  const target = h == null ? (S.rotMode ? rotBearing : 0) : (360 - h) % 360;
+  const now = Date.now();
+  const diff = Math.abs(((target - rotBearing + 540) % 360) - 180);
+  if (!force && (diff < 2 || now - rotLast < 120)) return;
+  rotLast = now; rotBearing = target;
+  map.setBearing(target);
+  if (S.follow && S.pos) map.panTo(S.pos.ll, { animate: false });
+}
+function setRotMode(m) {
+  S.rotMode = m;
+  const b = $('#btnCompass'); b.textContent = ROT_MODES[m].ic; b.classList.toggle('active', m > 0);
+  if (m === 1) startCompass();
+  if (m === 0) { rotBearing = 0; if (map.setBearing) map.setBearing(0); }
+  else { S.follow = true; $('#btnLocate').classList.add('active'); applyRotation(true); }
+  toast(ROT_MODES[m].t + (m === 1 && S.heading == null ? ' — đang chờ la bàn…' : '') + (m === 2 ? ' (cần di chuyển)' : ''));
+}
 function smoothAngle(a, b, k) { let d = ((b - a + 540) % 360) - 180; return (a + d * k + 360) % 360; }
 async function startCompass() {
   if (compassOn) return true;
+  if (PLG.Compass) {
+    try {
+      await PLG.Compass.addListener('heading', d => { S.nativeCompass = true; onHeading(d.heading); });
+      await PLG.Compass.start();
+      compassOn = true; return true;
+    } catch (e) { console.warn('compass native', e); }
+  }
   try {
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      const r = await DeviceOrientationEvent.requestPermission(); if (r !== 'granted') { toast('Chưa cấp quyền la bàn'); return false; }
+      const r = await DeviceOrientationEvent.requestPermission().catch(() => 'error');
+      if (r !== 'granted' && /iPhone|iPad/.test(navigator.userAgent)) { toast('Chưa cấp quyền la bàn — chạm nút 🧭 để cho phép'); return false; }
     }
   } catch (e) { }
   if ('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onOrient);
@@ -694,7 +738,10 @@ $('#btnLocate').onclick = () => {
   S.follow = true; $('#btnLocate').classList.add('active');
   if (S.pos) map.setView(S.pos.ll, Math.max(map.getZoom(), 17)); else toast('Đang chờ tín hiệu GPS…');
 };
-$('#btnCompass').onclick = () => compassSheet();
+S.rotMode = 0;
+$('#btnCompass').onclick = () => setRotMode((S.rotMode + 1) % 3);
+// Bấm mũi tên Bắc (góc dưới trái) để đưa bản đồ về Bắc lên trên
+if (map.rotateControl && map.rotateControl.getContainer) map.rotateControl.getContainer().addEventListener('click', () => { if (S.rotMode) setRotMode(0); }, true);
 $('#btnCamera').onclick = () => openCamera();
 // Đồng hồ trên thanh trạng thái
 function tickClock() {
@@ -1011,13 +1058,20 @@ async function importFile(file) {
     else if (n.endsWith('.kml')) gj = toGeoJSON.kml(new DOMParser().parseFromString(txt, 'text/xml'));
     else gj = JSON.parse(txt);
     const feats = gj.type === 'FeatureCollection' ? gj.features : gj.type === 'Feature' ? [gj] : [{ type: 'Feature', geometry: gj, properties: {} }];
+    const ownCount = feats.filter(f => f.properties && f.properties._lndt).length;
+    if (!ownCount) {
+      const o = await addRefLayer({ type: 'FeatureCollection', features: feats.filter(f => f.geometry) }, file.name);
+      toast(`Đã nạp lớp tham chiếu "${file.name}" (${o.meta.count} đối tượng). Bật/tắt tại nút 🗺️`, 4500); closeSheet();
+      return;
+    }
     let c = 0;
     for (const ft of feats) {
       if (!ft.geometry) continue;
       const p = ft.properties || {};
       const own = p._lndt;
       const kind = own && KIND[own.kind] ? own.kind : ft.geometry.type === 'Point' ? 'point' : 'import';
-      const f = newFeature(kind, ft.geometry, { name: String(p.name || p.Name || p.ten || p.TEN || p.Ten || ''), layer: file.name });
+      if (!own) continue;
+      const f = newFeature(kind, ft.geometry, { name: String(p.name || p.Name || p.ten || p.TEN || p.Ten || '') });
       if (own) Object.assign(f, { formId: own.formId || '', note: own.note || '', created: own.created || f.created, values: own.values || {} });
       else Object.keys(p).forEach(k => { if (typeof p[k] !== 'object') f.values[k] = p[k]; });
       if (ft.geometry.type === 'LineString' && kind === 'import') f.kind = /gpx/.test(n) ? 'track' : 'line';
@@ -1150,7 +1204,10 @@ async function restoreBackup(o) {
 /* ======= Bản đồ nền, offline, MBTiles ======= */
 const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
   const bases = allBases();
-  body.innerHTML = `<div class="sec">Bản đồ nền</div>
+  body.innerHTML = `<div class="sec" style="margin-top:4px">Lớp bản đồ tham chiếu (ranh giới, hiện trạng…)</div>
+    <ul class="list" id="refL"></ul>
+    <button class="btn block" id="refAdd">📂 Nạp file GeoJSON / KML / GPX làm lớp tham chiếu</button>
+    <div class="sec">Bản đồ nền</div>
     ${Object.keys(bases).map(k => `<label class="f" style="font-weight:400;color:var(--fg)"><input type="radio" name="bs" value="${k}" ${k === S.set.base ? 'checked' : ''}> ${esc(bases[k].n)}</label>`).join('')}
     <div class="row" style="margin-top:8px"><input id="mbTok" placeholder="Mapbox access token (pk.…)" value="${esc(S.set.mapboxToken)}"><button class="btn" id="mbSave" style="flex:none">Lưu</button></div>
     <div class="sec">Thêm nền tùy chỉnh (XYZ)</div>
@@ -1205,6 +1262,24 @@ const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
   };
   $('#olClr').onclick = async () => { if (confirm('Xóa toàn bộ ô bản đồ đã tải?')) { await DB.clear('tiles'); toast('Đã xóa'); } };
   $('#mbAdd').onclick = async () => { const f = await pickFile('.mbtiles'); if (f) { toast('Đang mở…'); await addMBTiles(await f.arrayBuffer(), f.name, true, 1, true); showTop(); } };
+  const rl = $('#refL');
+  rl.innerHTML = [...S.refs.values()].map(o => { const m = o.meta; return `<li style="flex-wrap:wrap"><input type="checkbox" data-rv="${m.id}" ${m.visible ? 'checked' : ''}>
+    <div class="grow"><div class="t">${esc(m.name)}</div><div class="s">${m.count} đối tượng</div></div>
+    <input type="color" value="${m.color}" data-rc="${m.id}" style="width:40px;height:34px;padding:2px">
+    <button class="btn" data-rz="${m.id}">🔍</button><button class="btn danger" data-rd="${m.id}">✕</button>
+    <div style="flex-basis:100%;display:flex;gap:8px;align-items:center;margin-top:6px">
+      <span class="muted">Nhãn</span><select data-rlab="${m.id}" style="flex:1"><option value="">— không —</option>${m.fields.map(f => `<option ${f === m.label ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
+      <input type="range" min="0.2" max="1" step="0.1" value="${m.opacity}" data-ro="${m.id}" style="flex:1">
+      <button class="btn" data-rcp="${m.id}" title="Chuyển cả lớp vào dữ liệu thu thập">⇩</button></div></li>`; }).join('') || '<li class="muted">Chưa có lớp tham chiếu</li>';
+  const R = id => S.refs.get(id);
+  rl.querySelectorAll('[data-rv]').forEach(c => c.onchange = () => { const o = R(c.dataset.rv); o.meta.visible = c.checked; c.checked ? o.layer.addTo(map) : o.layer.remove(); saveRefMeta(); });
+  rl.querySelectorAll('[data-rc]').forEach(c => c.onchange = () => { const o = R(c.dataset.rc); o.meta.color = c.value; renderRef(o); saveRefMeta(); });
+  rl.querySelectorAll('[data-ro]').forEach(c => c.onchange = () => { const o = R(c.dataset.ro); o.meta.opacity = +c.value; renderRef(o); saveRefMeta(); });
+  rl.querySelectorAll('[data-rlab]').forEach(c => c.onchange = () => { const o = R(c.dataset.rlab); o.meta.label = c.value; renderRef(o); saveRefMeta(); });
+  rl.querySelectorAll('[data-rz]').forEach(c => c.onclick = () => { const o = R(c.dataset.rz); if (!o.meta.visible) { o.meta.visible = true; o.layer.addTo(map); saveRefMeta(); } const b = o.layer.getBounds(); if (b.isValid()) { closeSheet(); S.follow = false; map.fitBounds(b, { maxZoom: 17 }); } });
+  rl.querySelectorAll('[data-rd]').forEach(c => c.onclick = async () => { const o = R(c.dataset.rd); if (!confirm(`Xóa lớp "${o.meta.name}"? (Dữ liệu thu thập không bị ảnh hưởng)`)) return; o.layer.remove(); S.refs.delete(o.meta.id); await DB.del('files', o.meta.id); await saveRefMeta(); showTop(); });
+  rl.querySelectorAll('[data-rcp]').forEach(c => c.onclick = async () => { const o = R(c.dataset.rcp); if (!confirm(`Sao chép toàn bộ ${o.meta.count} đối tượng của lớp "${o.meta.name}" vào dữ liệu thu thập (để sửa, gắn ảnh, xuất báo cáo)?`)) return; const n = await refToData(o); toast('Đã sao chép ' + n + ' đối tượng'); });
+  $('#refAdd').onclick = () => importFile();
   const ml = $('#mbL');
   ml.innerHTML = [...S.mbt.values()].map(o => `<li><input type="checkbox" data-v="${esc(o.key)}" ${o.visible ? 'checked' : ''}><div class="grow"><div class="t">${esc(o.name)}</div><div class="s">${o.layer.isVector ? 'Vector' : 'Raster ' + o.mb.format} · z${o.mb.minz}-${o.mb.maxz}</div>
     <input type="range" min="0.1" max="1" step="0.1" value="${o.opacity}" data-o="${esc(o.key)}"></div><button class="btn" data-z="${esc(o.key)}">🔍</button><button class="btn danger" data-d="${esc(o.key)}">✕</button></li>`).join('') || '<li class="muted">Chưa có lớp MBTiles</li>';
@@ -1343,6 +1418,88 @@ const helpSheet = sheetFn('Hướng dẫn nhanh', body => {
 
 let _logo;
 function logoImg() { if (!_logo) _logo = new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = 'icons/logo-256.png'; }); return _logo; }
+
+/* ================= Lớp bản đồ tham chiếu ================= */
+const REF_COLORS = ['#ffeb3b', '#00e5ff', '#ff4081', '#76ff03', '#ff9100', '#e040fb', '#ffffff'];
+S.refs = new Map(); // id -> {meta, gj, layer}
+const refRenderer = L.canvas({ padding: 0.3 });
+async function saveRefMeta() { await DB.put('kv', 'refLayers', [...S.refs.values()].map(o => o.meta)); }
+function guessLabel(fields) {
+  return fields.find(f => /^(so_?lo|lo|lô|ma_?lo|malo|ten_?lo)$/i.test(f)) || fields.find(f => /^(name|ten|tên|label)$/i.test(f)) || fields.find(f => /lo|khoanh|tk/i.test(f)) || '';
+}
+function refFields(gj) { const k = new Set(); (gj.features || []).slice(0, 500).forEach(f => Object.keys(f.properties || {}).forEach(x => { if (x !== '_lndt' && typeof f.properties[x] !== 'object') k.add(x); })); return [...k]; }
+function renderRef(o) {
+  if (o.layer) o.layer.remove();
+  const m = o.meta;
+  const st = { color: m.color, weight: 2, opacity: m.opacity, fillOpacity: m.opacity * 0.12, renderer: refRenderer };
+  o.layer = L.geoJSON(o.gj, {
+    style: () => st,
+    pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: '#000', weight: 1, fillColor: m.color, fillOpacity: m.opacity, renderer: refRenderer }),
+    onEachFeature: (f, l) => {
+      const v = m.label && f.properties ? f.properties[m.label] : null;
+      if (v != null && v !== '') l.bindTooltip(esc(v), { permanent: true, direction: 'center', className: 'ref-label' });
+      l.on('click', e => { L.DomEvent.stop(e); if (S.draw) return addVertex(e.latlng); refPopup(o, f, e.latlng); });
+    }
+  });
+  if (m.visible) o.layer.addTo(map);
+}
+function refPopup(o, f, ll) {
+  const p = f.properties || {}, div = document.createElement('div');
+  const keys = Object.keys(p).filter(k => k !== '_lndt' && typeof p[k] !== 'object');
+  let extra = '';
+  try { if (f.geometry.type === 'Polygon') { const a = areaOf(f.geometry.coordinates[0].slice(0, -1).map(c => L.latLng(c[1], c[0]))); extra = `<tr><td>Diện tích đo trên bản đồ</td><td>${(a / 10000).toFixed(4)} ha</td></tr>`; } } catch (e) { }
+  div.innerHTML = `<b>${esc(o.meta.name)}</b><table class="kv">${keys.map(k => `<tr><td>${esc(k)}</td><td>${esc(p[k])}</td></tr>`).join('')}${extra}</table>
+    <div class="row" style="margin-top:6px"><button class="btn" data-a="c">⇩ Sao chép vào dữ liệu của tôi</button></div>`;
+  const pop = L.popup({ maxWidth: 300, maxHeight: 320 }).setLatLng(ll).setContent(div).openOn(map);
+  div.querySelector('[data-a=c]').onclick = async () => {
+    map.closePopup(pop);
+    const kind = f.geometry.type === 'Point' ? 'point' : f.geometry.type === 'LineString' ? 'line' : f.geometry.type === 'Polygon' ? 'polygon' : 'import';
+    const nf = newFeature(kind, f.geometry, { name: String(p[o.meta.label] || p.name || p.ten || ''), note: 'Sao chép từ lớp ' + o.meta.name });
+    keys.forEach(k => nf.values[k] = p[k]);
+    await saveFeature(nf); openFeature(nf.id);
+  };
+}
+async function addRefLayer(gj, name, quiet) {
+  const id = 'ref_' + uid();
+  const fields = refFields(gj);
+  const meta = { id, name, visible: true, color: REF_COLORS[S.refs.size % REF_COLORS.length], opacity: 0.9, label: guessLabel(fields), fields, count: (gj.features || []).length };
+  await DB.put('files', id, gj);
+  const o = { meta, gj }; S.refs.set(id, o); renderRef(o); await saveRefMeta();
+  if (!quiet) { const b = o.layer.getBounds(); if (b.isValid()) { S.follow = false; map.fitBounds(b, { maxZoom: 17 }); } }
+  return o;
+}
+async function loadRefs() {
+  const metas = (await DB.get('kv', 'refLayers')) || [];
+  for (const m of metas) { const gj = await DB.get('files', m.id); if (gj) { const o = { meta: m, gj }; S.refs.set(m.id, o); renderRef(o); } }
+  // Chuyển dữ liệu đã nạp từ file ở các bản trước sang lớp tham chiếu
+  if (await DB.get('kv', 'refMigrated')) return;
+  const groupsByFile = {};
+  for (const f of S.feats.values()) {
+    if (!f.layer || f.layer === 'saoluu.geojson' || /\.(xlsx|xls|csv)$/i.test(f.layer) || f.kind === 'marker' || f.kind === 'check' || (f.photos || []).length || f.formId) continue;
+    (groupsByFile[f.layer] = groupsByFile[f.layer] || []).push(f);
+  }
+  for (const name of Object.keys(groupsByFile)) {
+    const fs = groupsByFile[name];
+    await addRefLayer({ type: 'FeatureCollection', features: fs.map(f => ({ type: 'Feature', geometry: f.geom, properties: Object.assign({ name: f.name }, f.values) })) }, name, true);
+    for (const f of fs) await deleteFeature(f.id);
+  }
+  await DB.put('kv', 'refMigrated', 1);
+  if (Object.keys(groupsByFile).length) toast('Đã chuyển ' + Object.keys(groupsByFile).length + ' file đã nạp sang mục Lớp bản đồ tham chiếu (nút 🗺️)', 5000);
+}
+async function refToData(o) {
+  let n = 0;
+  for (const f of o.gj.features || []) {
+    if (!f.geometry) continue;
+    const p = f.properties || {};
+    const kind = f.geometry.type === 'Point' ? 'point' : f.geometry.type === 'LineString' ? 'line' : f.geometry.type === 'Polygon' ? 'polygon' : 'import';
+    const nf = newFeature(kind, f.geometry, { name: String(p[o.meta.label] || p.name || ''), note: 'Từ lớp ' + o.meta.name });
+    Object.keys(p).forEach(k => { if (k !== '_lndt' && typeof p[k] !== 'object') nf.values[k] = p[k]; });
+    await saveFeature(nf); n++;
+  }
+  return n;
+}
+const lowZoom = () => map.getContainer().classList.toggle('lowzoom', map.getZoom() < 13);
+map.on('zoomend', lowZoom); lowZoom();
 
 /* ================= Lưu ảnh vào Bộ sưu tập ================= */
 async function saveToGallery(blob, t, name, notify) {
@@ -1492,5 +1649,5 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && !NATIVE) {
 }
 setTimeout(() => checkUpdate(false), 4000);
 $('#btnLocate').classList.add('active');
-window.LNDT = { S, map, CRS }; // gỡ lỗi
+window.LNDT = { S, map, CRS, onHeading, startCompass }; // gỡ lỗi
 })();

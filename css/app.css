@@ -136,3 +136,9 @@ video.scan { width: 100%; border-radius: 10px; background: #000; }
 .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .brand img { width: 58px; height: 58px; }
 .brand b { font-size: 17px; color: var(--green2); }
+.ref-label { background: rgba(0,0,0,.55); color: #fff; border: none; box-shadow: none; font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 4px; }
+.ref-label::before { display: none; }
+.lowzoom .ref-label { display: none; }
+.leaflet-control-rotate a { width: 44px !important; height: 44px !important; line-height: 44px !important; border-radius: 50% !important; font-size: 22px !important; }
+#btnCompass { font-size: 22px; }
+input[type=radio] { width: auto; transform: scale(1.25); margin-right: 8px; vertical-align: middle; }
