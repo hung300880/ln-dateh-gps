@@ -1041,7 +1041,13 @@ const convertSheet = sheetFn('Chuyển đổi tọa độ', body => {
 
 /* ======= Nhập file ======= */
 function pickFile(accept) {
-  return new Promise(res => { const i = $('#fileInput'); i.value = ''; i.accept = accept || ''; i.onchange = () => res(i.files[0]); i.click(); });
+  // Trên Android, bộ chọn file lọc theo loại MIME nên ẩn các file .geojson/.mbtiles/.kml (không có MIME chuẩn).
+  // Bản APK hiện tất cả file; ứng dụng tự kiểm tra đuôi file sau khi chọn.
+  const nativeAll = NATIVE && accept && accept !== 'image/*';
+  return new Promise(res => { const i = $('#fileInput'); i.value = ''; i.accept = nativeAll ? '' : (accept || ''); i.onchange = () => {
+    const f = i.files[0];
+    if (f && nativeAll) { const ok = accept.split(',').map(x => x.trim().toLowerCase()).filter(x => x.startsWith('.')); if (ok.length && !ok.some(x => f.name.toLowerCase().endsWith(x))) { toast('File không đúng loại. Cần: ' + ok.join(', '), 4000); return res(null); } }
+    res(f); }; i.click(); });
 }
 async function importFile(file) {
   file = file || await pickFile('.gpx,.kml,.geojson,.json,.mbtiles,.xlsx,.xls,.csv');
