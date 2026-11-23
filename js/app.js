@@ -718,7 +718,7 @@ map.on('click', e => {
   let hits = [];
   S.mbt.forEach(o => { if (o.visible && o.layer.isVector) hits = hits.concat(o.layer.query(e.latlng, map).map(h => Object.assign({ src: o.name }, h))); });
   if (hits.length) {
-    L.popup({ maxWidth: 280 }).setLatLng(e.latlng).setContent(hits.map(h => `<b>${esc(h.src)} › ${esc(h.layer)}</b><table class="kv">${Object.keys(h.props).map(k => `<tr><td>${esc(k)}</td><td>${esc(h.props[k])}</td></tr>`).join('')}</table>`).join('<hr>')).openOn(map);
+    L.popup({ maxWidth: 280, autoPanPaddingTopLeft: L.point(10, 150), autoPanPaddingBottomRight: L.point(10, 80) }).setLatLng(e.latlng).setContent(hits.map(h => `<b>${esc(h.src)} › ${esc(h.layer)}</b><table class="kv">${Object.keys(h.props).map(k => `<tr><td>${esc(k)}</td><td>${esc(h.props[k])}</td></tr>`).join('')}</table>`).join('<hr>')).openOn(map);
   }
 });
 map.on('contextmenu', e => {
@@ -727,7 +727,7 @@ map.on('contextmenu', e => {
   const d = S.pos ? `<br>Cách bạn: ${fmtLen(S.pos.ll.distanceTo(e.latlng))}, phương vị ${bearing(S.pos.ll, e.latlng).toFixed(0)}°` : '';
   const div = document.createElement('div');
   div.innerHTML = `<b>${r.la}:</b> ${r.a}<br><b>${r.lb}:</b> ${r.b}<br><span class="muted">${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}</span>${d}<div class="row" style="margin-top:6px"><button class="btn" data-a="p">📍 Tạo điểm</button><button class="btn" data-a="n">🧭 Đến đây</button></div>`;
-  const pop = L.popup().setLatLng(e.latlng).setContent(div).openOn(map);
+  const pop = L.popup({ autoPanPaddingTopLeft: L.point(10, 150), autoPanPaddingBottomRight: L.point(10, 80) }).setLatLng(e.latlng).setContent(div).openOn(map);
   div.querySelector('[data-a=p]').onclick = async () => { map.closePopup(pop); const f = newFeature('point', { type: 'Point', coordinates: [+e.latlng.lng.toFixed(7), +e.latlng.lat.toFixed(7)] }); await saveFeature(f); openFeature(f.id, true); };
   div.querySelector('[data-a=n]').onclick = () => { map.closePopup(pop); startNav('Vị trí chọn', e.latlng); };
 });
@@ -1268,10 +1268,24 @@ const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
     <input type="color" value="${m.color}" data-rc="${m.id}" style="width:40px;height:34px;padding:2px">
     <button class="btn" data-rz="${m.id}">🔍</button><button class="btn danger" data-rd="${m.id}">✕</button>
     <div style="flex-basis:100%;display:flex;gap:8px;align-items:center;margin-top:6px">
-      <span class="muted">Nhãn</span><select data-rlab="${m.id}" style="flex:1"><option value="">— không —</option>${m.fields.map(f => `<option ${f === m.label ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
+      <span class="muted">Nhãn</span><select data-rlab="${m.id}" style="flex:1"><option value="">— không —</option>${m.fields.some(f => /^lo$/i.test(f)) ? `<option value="@lo_ldlr" ${m.label === '@lo_ldlr' ? 'selected' : ''}>Lô + hiện trạng</option><option value="@tk_k_lo" ${m.label === '@tk_k_lo' ? 'selected' : ''}>TK.Khoảnh.Lô</option>` : ''}${m.fields.map(f => `<option ${f === m.label ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
       <input type="range" min="0.2" max="1" step="0.1" value="${m.opacity}" data-ro="${m.id}" style="flex:1">
-      <button class="btn" data-rcp="${m.id}" title="Chuyển cả lớp vào dữ liệu thu thập">⇩</button></div></li>`; }).join('') || '<li class="muted">Chưa có lớp tham chiếu</li>';
+      <button class="btn" data-rcp="${m.id}" title="Chuyển cả lớp vào dữ liệu thu thập">⇩</button></div>${refLegend(o)}
+    <div style="flex-basis:100%;display:flex;gap:8px;margin-top:6px"><input data-rq="${m.id}" placeholder="🔎 Tìm lô: VD 572 11 13 (TK khoảnh lô)" style="flex:1"><button class="btn" data-rqb="${m.id}" style="flex:none">Tìm</button></div></li>`; }).join('') || '<li class="muted">Chưa có lớp tham chiếu</li>';
   const R = id => S.refs.get(id);
+  rl.querySelectorAll('[data-rcls]').forEach(c => c.onchange = () => { const [id, k] = c.dataset.rcls.split('|'); const o = R(id); const h = new Set(o.meta.hiddenClasses || []); c.checked ? h.delete(k) : h.add(k); o.meta.hiddenClasses = [...h]; renderRef(o); saveRefMeta(); });
+  rl.querySelectorAll('[data-rst]').forEach(c => c.onchange = () => { const o = R(c.dataset.rst); o.meta.useStyle = c.checked; renderRef(o); saveRefMeta(); });
+  const findLo = id => {
+    const o = R(id), q = rl.querySelector(`[data-rq="${id}"]`).value.trim().toLowerCase().split(/[\s.,\-/]+/).filter(Boolean);
+    if (!q.length) return;
+    const hit = (o.gj.features || []).find(f => { const p = f.properties || {}; const v = [pick(p, 'tk'), pick(p, 'khoanh'), pick(p, 'lo')].map(x => String(x == null ? '' : x).toLowerCase()); return q.length >= 3 ? v[0] === q[0] && v[1] === q[1] && v[2] === q[2] : q.length === 2 ? v[1] === q[0] && v[2] === q[1] : v[2] === q[0]; });
+    if (!hit) return toast('Không tìm thấy lô ' + q.join('.'));
+    if (!o.meta.visible) { o.meta.visible = true; o.layer.addTo(map); saveRefMeta(); }
+    const b = L.geoJSON(hit).getBounds(); closeSheet(); S.follow = false; map.fitBounds(b, { maxZoom: 18, padding: [40, 40] });
+    setTimeout(() => refPopup(o, hit, b.getCenter()), 400);
+  };
+  rl.querySelectorAll('[data-rqb]').forEach(c => c.onclick = () => findLo(c.dataset.rqb));
+  rl.querySelectorAll('[data-rq]').forEach(c => c.onkeydown = e => { if (e.key === 'Enter') findLo(c.dataset.rq); });
   rl.querySelectorAll('[data-rv]').forEach(c => c.onchange = () => { const o = R(c.dataset.rv); o.meta.visible = c.checked; c.checked ? o.layer.addTo(map) : o.layer.remove(); saveRefMeta(); });
   rl.querySelectorAll('[data-rc]').forEach(c => c.onchange = () => { const o = R(c.dataset.rc); o.meta.color = c.value; renderRef(o); saveRefMeta(); });
   rl.querySelectorAll('[data-ro]').forEach(c => c.onchange = () => { const o = R(c.dataset.ro); o.meta.opacity = +c.value; renderRef(o); saveRefMeta(); });
@@ -1447,17 +1461,37 @@ async function saveRefMeta() { await DB.put('kv', 'refLayers', [...S.refs.values
 function guessLabel(fields) {
   return fields.find(f => /^(so_?lo|lo|lô|ma_?lo|malo|ten_?lo)$/i.test(f)) || fields.find(f => /^(name|ten|tên|label)$/i.test(f)) || fields.find(f => /lo|khoanh|tk/i.test(f)) || '';
 }
-function refFields(gj) { const k = new Set(); (gj.features || []).slice(0, 500).forEach(f => Object.keys(f.properties || {}).forEach(x => { if (x !== '_lndt' && typeof f.properties[x] !== 'object') k.add(x); })); return [...k]; }
+function refFields(gj) { const k = new Set(); (gj.features || []).slice(0, 500).forEach(f => Object.keys(f.properties || {}).forEach(x => { if (x[0] !== '_' && typeof f.properties[x] !== 'object') k.add(x); })); return [...k]; }
+const REF_ALIAS = { tinh: 'Tỉnh', huyen: 'Huyện', xa: 'Xã', tk: 'Tiểu khu', khoanh: 'Khoảnh', lo: 'Lô', ldlr: 'Hiện trạng (mã)', ldlr1: 'Hiện trạng phụ', loaicay: 'Loài cây', namtrong: 'Năm trồng', malr3: 'Mục đích (mã)', chuquanly: 'Chủ quản lý', dtich: 'Diện tích (ha)', dtich1: 'Diện tích 1 (ha)', dt_tinh_ha: 'Diện tích tính lại (ha)', ghichu1: 'Ghi chú 1', ghichu2: 'Ghi chú 2', hm1: 'HM1', hm2: 'HM2' };
+const pick = (p, ...ks) => { for (const k of ks) for (const x of Object.keys(p)) if (x.toLowerCase() === k) return p[x]; return undefined; };
+function refLabel(m, p) {
+  if (!m.label || !p) return null;
+  if (m.label === '@lo_ldlr') { const lo = pick(p, 'lo', 'lô', 'so_lo'), ht = pick(p, 'ldlr', 'trang_thai', 'hientrang'); return lo == null ? null : esc(lo) + (ht ? '<br><small>' + esc(ht) + '</small>' : ''); }
+  if (m.label === '@tk_k_lo') { const t = [pick(p, 'tk'), pick(p, 'khoanh'), pick(p, 'lo')].filter(v => v != null && v !== ''); return t.length ? esc(t.join('.')) : null; }
+  const v = p[m.label]; return v == null || v === '' ? null : esc(v);
+}
+function refLegend(o) {
+  if (!refStyled(o.gj)) return '';
+  const m = o.meta, hidden = new Set(m.hiddenClasses || []), g = {};
+  (o.gj.features || []).forEach(f => { const p = f.properties || {}, k = refClassKey(p); const e = g[k] || (g[k] = { fill: p._fill, n: 0, ha: 0 }); e.n++; e.ha += +(pick(p, 'dtich', 'dt_tinh_ha') || 0); });
+  const rows = Object.keys(g).sort().map(k => `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px"><input type="checkbox" data-rcls="${m.id}|${esc(k)}" ${hidden.has(k) ? '' : 'checked'}><span style="width:22px;height:14px;border:1px solid #333;border-radius:3px;background:${esc(g[k].fill || '#ccc')}"></span><b style="min-width:44px">${esc(k)}</b><span class="muted">${g[k].n} lô · ${g[k].ha.toFixed(2)} ha</span></label>`).join('');
+  return `<div style="flex-basis:100%;margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-rst="${m.id}" ${m.useStyle !== false ? 'checked' : ''}>Dùng màu hiện trạng gốc của file</label><div class="muted" style="margin:4px 0 2px">Chú giải hiện trạng (bỏ tích để ẩn):</div>${rows}</div>`;
+}
+function refStyled(gj) { return (gj.features || []).some(f => f.properties && f.properties._fill); }
+function refClassKey(p) { return String(pick(p, 'ldlr', 'trang_thai', 'hientrang') || p._fill || '?'); }
 function renderRef(o) {
   if (o.layer) o.layer.remove();
   const m = o.meta;
   const st = { color: m.color, weight: 2, opacity: m.opacity, fillOpacity: m.opacity * 0.12, renderer: refRenderer };
+  const useStyle = m.useStyle !== false && refStyled(o.gj);
+  const hidden = new Set(m.hiddenClasses || []);
   o.layer = L.geoJSON(o.gj, {
-    style: () => st,
+    filter: f => !hidden.size || !hidden.has(refClassKey(f.properties || {})),
+    style: f => useStyle && f.properties && f.properties._fill ? { color: f.properties._stroke || '#000', weight: Math.max(1, f.properties._weight || 1), opacity: Math.min(1, m.opacity + 0.1), fillColor: f.properties._fill, fillOpacity: m.opacity * 0.6, renderer: refRenderer } : st,
     pointToLayer: (f, ll) => L.circleMarker(ll, { radius: 5, color: '#000', weight: 1, fillColor: m.color, fillOpacity: m.opacity, renderer: refRenderer }),
     onEachFeature: (f, l) => {
-      const v = m.label && f.properties ? f.properties[m.label] : null;
-      if (v != null && v !== '') l.bindTooltip(esc(v), { permanent: true, direction: 'center', className: 'ref-label' });
+      const v = refLabel(m, f.properties);
+      if (v) l.bindTooltip(v, { permanent: true, direction: 'center', className: 'ref-label' });
       l.on('click', e => { L.DomEvent.stop(e); if (S.draw) return addVertex(e.latlng); refPopup(o, f, e.latlng); });
     }
   });
@@ -1465,12 +1499,15 @@ function renderRef(o) {
 }
 function refPopup(o, f, ll) {
   const p = f.properties || {}, div = document.createElement('div');
-  const keys = Object.keys(p).filter(k => k !== '_lndt' && typeof p[k] !== 'object');
+  const keys = Object.keys(p).filter(k => k[0] !== '_' && typeof p[k] !== 'object');
   let extra = '';
-  try { if (f.geometry.type === 'Polygon') { const a = areaOf(f.geometry.coordinates[0].slice(0, -1).map(c => L.latLng(c[1], c[0]))); extra = `<tr><td>Diện tích đo trên bản đồ</td><td>${(a / 10000).toFixed(4)} ha</td></tr>`; } } catch (e) { }
-  div.innerHTML = `<b>${esc(o.meta.name)}</b><table class="kv">${keys.map(k => `<tr><td>${esc(k)}</td><td>${esc(p[k])}</td></tr>`).join('')}${extra}</table>
+  try { if (f.geometry.type === 'Polygon' && p.dt_tinh_ha == null) { const a = areaOf(f.geometry.coordinates[0].slice(0, -1).map(c => L.latLng(c[1], c[0]))); extra = `<tr><td>Diện tích đo trên bản đồ</td><td>${(a / 10000).toFixed(4)} ha</td></tr>`; } } catch (e) { }
+  const tk = pick(p, 'tk'), kh = pick(p, 'khoanh'), lo = pick(p, 'lo');
+  const head = tk || kh || lo ? `TK ${esc(tk || '?')} · Khoảnh ${esc(kh || '?')} · Lô ${esc(lo || '?')}` : esc(o.meta.name);
+  const sw = p._fill ? `<span style="display:inline-block;width:14px;height:14px;border:1px solid #333;background:${esc(p._fill)};vertical-align:middle;margin-right:6px;border-radius:3px"></span>` : '';
+  div.innerHTML = `<b>${sw}${head}</b><div class="muted">${esc(o.meta.name)}</div><table class="kv">${keys.map(k => `<tr><td>${esc(REF_ALIAS[k.toLowerCase()] || k)}</td><td>${esc(p[k])}</td></tr>`).join('')}${extra}</table>
     <div class="row" style="margin-top:6px"><button class="btn" data-a="c">⇩ Sao chép vào dữ liệu của tôi</button></div>`;
-  const pop = L.popup({ maxWidth: 300, maxHeight: 320 }).setLatLng(ll).setContent(div).openOn(map);
+  const pop = L.popup({ maxWidth: 300, maxHeight: 320, autoPanPaddingTopLeft: L.point(10, 150), autoPanPaddingBottomRight: L.point(10, 80) }).setLatLng(ll).setContent(div).openOn(map);
   div.querySelector('[data-a=c]').onclick = async () => {
     map.closePopup(pop);
     const kind = f.geometry.type === 'Point' ? 'point' : f.geometry.type === 'LineString' ? 'line' : f.geometry.type === 'Polygon' ? 'polygon' : 'import';
@@ -1482,7 +1519,9 @@ function refPopup(o, f, ll) {
 async function addRefLayer(gj, name, quiet) {
   const id = 'ref_' + uid();
   const fields = refFields(gj);
-  const meta = { id, name, visible: true, color: REF_COLORS[S.refs.size % REF_COLORS.length], opacity: 0.9, label: guessLabel(fields), fields, count: (gj.features || []).length };
+  const styled = refStyled(gj), lf = fields.map(f => f.toLowerCase());
+  const label = styled && lf.includes('lo') && lf.includes('ldlr') ? '@lo_ldlr' : guessLabel(fields);
+  const meta = { id, name, visible: true, color: REF_COLORS[S.refs.size % REF_COLORS.length], opacity: styled ? 0.75 : 0.9, label, fields, count: (gj.features || []).length, useStyle: true, hiddenClasses: [] };
   await DB.put('files', id, gj);
   const o = { meta, gj }; S.refs.set(id, o); renderRef(o); await saveRefMeta();
   if (!quiet) { const b = o.layer.getBounds(); if (b.isValid()) { S.follow = false; map.fitBounds(b, { maxZoom: 17 }); } }

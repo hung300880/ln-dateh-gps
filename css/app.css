@@ -142,3 +142,5 @@ video.scan { width: 100%; border-radius: 10px; background: #000; }
 .leaflet-control-rotate a { width: 44px !important; height: 44px !important; line-height: 44px !important; border-radius: 50% !important; font-size: 22px !important; }
 #btnCompass { font-size: 22px; }
 input[type=radio] { width: auto; transform: scale(1.25); margin-right: 8px; vertical-align: middle; }
+.ref-label { text-align: center; line-height: 1.1; }
+.ref-label small { font-weight: 600; font-size: 9px; opacity: .9; }
