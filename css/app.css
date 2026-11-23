@@ -144,3 +144,5 @@ video.scan { width: 100%; border-radius: 10px; background: #000; }
 input[type=radio] { width: auto; transform: scale(1.25); margin-right: 8px; vertical-align: middle; }
 .ref-label { text-align: center; line-height: 1.1; }
 .ref-label small { font-weight: 600; font-size: 9px; opacity: .9; }
+#netBadge { position: absolute; z-index: 800; left: 8px; top: calc(150px + var(--safe-t)); max-width: calc(100% - 80px); background: rgba(55,71,79,.92); color: #fff; padding: 5px 10px; border-radius: 14px; font-size: 12px; font-weight: 600; }
+#netBadge.dl { background: rgba(13,71,161,.92); }

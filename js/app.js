@@ -51,21 +51,123 @@ if (map.rotateControl && map.rotateControl.getContainer) map.rotateControl.getCo
 L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
 map.attributionControl.setPrefix('LN DaTeh GPS');
 
+/* ======= Ô bản đồ: ưu tiên bộ nhớ máy, tự lưu khi có mạng, thiếu ảnh thì dùng ảnh mức thấp hơn ======= */
+const NET = { fails: 0, oks: 0, last: 0 };
+S.tileCount = 0;
+function netStatus(ok) {
+  if (ok) { NET.oks++; NET.fails = 0; } else { NET.fails++; NET.last = Date.now(); }
+  updateNetBadge();
+}
+function isOffline() { return navigator.onLine === false || (NET.fails >= 4 && Date.now() - NET.last < 20000); }
+function updateNetBadge() {
+  const b = document.getElementById('netBadge'); if (!b) return;
+  if (S.dl && S.dl.running) { b.textContent = `⬇ Đang tải bản đồ ${S.dl.done + S.dl.fail}/${S.dl.total} · bấm để dừng`; b.classList.remove('hidden'); b.classList.add('dl'); return; }
+  b.classList.remove('dl');
+  b.classList.toggle('hidden', !isOffline());
+  b.textContent = '📴 Không có mạng – đang dùng bản đồ đã lưu trong máy';
+}
+window.addEventListener('online', () => { NET.fails = 0; updateNetBadge(); });
+window.addEventListener('offline', updateNetBadge);
+// Ô "Map data not yet available" của Esri (trả về khi chưa có ảnh hoặc máy chủ quá tải): không lưu, coi như thiếu ảnh
+const PLACEHOLDER_SHA = new Set(['9eafd300d61393184a4abc1d458564cfd1cd9b6f9c4e9c74687045c0a0e5b858']);
+async function isPlaceholder(blob) {
+  if (!blob || blob.size > 6000) return false;
+  try { const d = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()); const hex = [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join(''); return PLACEHOLDER_SHA.has(hex) || blob.size === 2521; } catch (e) { return blob.size === 2521; }
+}
+async function tileFromParent(cid, z, x, y) {
+  for (let dz = 1; dz <= 8 && z - dz >= 0; dz++) {
+    const pz = z - dz, px = x >> dz, py = y >> dz;
+    const pk = cid + '/' + pz + '/' + px + '/' + py;
+    const b = await DB.get('tiles', pk).catch(() => null);
+    if (!b) continue;
+    if (await isPlaceholder(b)) { DB.del('tiles', pk).catch(() => { }); continue; }
+    try {
+      const bmp = await createImageBitmap(b), n = 1 << dz, sz = 256 / n;
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const g = c.getContext('2d'); g.imageSmoothingEnabled = true;
+      g.drawImage(bmp, (x - (px << dz)) * sz, (y - (py << dz)) * sz, sz, sz, 0, 0, 256, 256);
+      return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    } catch (e) { return null; }
+  }
+  return null;
+}
 const OfflineTile = L.TileLayer.extend({
   createTile(coords, done) {
     const img = document.createElement('img'); img.alt = '';
     img.setAttribute('role', 'presentation');
-    const url = this.getTileUrl(coords);
-    const key = this.options.cid + '/' + coords.z + '/' + coords.x + '/' + coords.y;
-    img.onload = () => { if (img._u) URL.revokeObjectURL(img._u); done(null, img); };
-    img.onerror = e => done(e, img);
-    DB.get('tiles', key).then(b => {
-      if (b) { img._u = URL.createObjectURL(b); img.src = img._u; }
-      else { if (this.options.crossOrigin) img.crossOrigin = ''; img.src = url; }
-    }).catch(() => { img.src = url; });
+    const url = this.getTileUrl(coords), cid = this.options.cid;
+    const key = cid + '/' + coords.z + '/' + coords.x + '/' + coords.y;
+    let finished = false;
+    const show = b => { img._u = URL.createObjectURL(b); img.onload = () => { URL.revokeObjectURL(img._u); if (!finished) { finished = true; done(null, img); } }; img.onerror = () => { if (!finished) { finished = true; done(null, img); } }; img.src = img._u; };
+    const fallback = async () => { const b = await tileFromParent(cid, coords.z, coords.x, coords.y); if (b) show(b); else if (!finished) { finished = true; done(null, img); } };
+    const layer = this;
+    const direct = () => { // nguồn không cho tải bằng fetch (CORS): hiển thị trực tiếp, không lưu được
+      img.onload = () => { layer._noCors = true; netStatus(true); if (!finished) { finished = true; done(null, img); } };
+      img.onerror = () => { netStatus(false); fallback(); };
+      img.src = url;
+    };
+    (async () => {
+      let b = await DB.get('tiles', key).catch(() => null);
+      if (b && await isPlaceholder(b)) { DB.del('tiles', key).catch(() => { }); b = null; }
+      if (b) return show(b);
+      if (navigator.onLine === false) return fallback();
+      if (this._noCors) return direct();
+      try {
+        const res = await fetch(url, { mode: 'cors' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob(); netStatus(true);
+        if (await isPlaceholder(blob)) return fallback(); // chưa có ảnh mức này: dùng ảnh mức thấp hơn
+        if (S.set.autoCache !== false && S.tileCount < (S.set.autoCacheMax || 25000)) { DB.put('tiles', key, blob).then(() => S.tileCount++).catch(() => { }); }
+        show(blob);
+      } catch (e) {
+        if (e instanceof TypeError && navigator.onLine !== false && !this._corsTried) { this._corsTried = true; direct(); }
+        else { netStatus(false); fallback(); }
+      }
+    })();
     return img;
   }
 });
+// Đường dẫn ô ảnh đúng mức zoom c.z (getTileUrl của Leaflet dùng mức zoom đang xem, không dùng được khi tải trước)
+function tileUrl(layer, c) { return L.Util.template(layer._url, L.Util.extend({ r: '', s: layer._getSubdomain(c), x: c.x, y: c.y, z: c.z }, layer.options)); }
+/* Tải ô bản đồ chạy nền (không phụ thuộc bảng đang mở) */
+async function downloadTiles(list, cid, label) {
+  if (S.dl && S.dl.running) return toast('Đang có một lượt tải, chờ xong hoặc dừng lượt trước');
+  const tpl = baseLayer;
+  S.dl = { running: true, total: list.length, done: 0, fail: 0, skip: 0, abort: false };
+  updateNetBadge(); keepAwake(true);
+  const worker = async () => {
+    while (list.length && !S.dl.abort) {
+      const c = list.pop(), key = cid + '/' + c.z + '/' + c.x + '/' + c.y;
+      try {
+        const old = await DB.get('tiles', key);
+        if (old && !(await isPlaceholder(old))) { S.dl.done++; S.dl.skip++; }
+        else {
+          let blob = null;
+          for (let t = 0; t < 3 && !S.dl.abort; t++) {
+            const r = await fetch(tileUrl(tpl, c), { mode: 'cors' }); if (!r.ok) throw 0;
+            const bl = await r.blob();
+            if (!(await isPlaceholder(bl))) { blob = bl; break; }
+            await sleep(1200 * (t + 1)); // máy chủ trả ô trống: chờ rồi thử lại
+          }
+          if (blob) { await DB.put('tiles', key, blob); S.tileCount++; S.dl.done++; } else { if (old) await DB.del('tiles', key); S.dl.fail++; S.dl.empty = (S.dl.empty || 0) + 1; }
+        }
+      } catch (e) { S.dl.fail++; }
+      if ((S.dl.done + S.dl.fail) % 10 === 0) { updateNetBadge(); const st = $('#olSt'); if (st) st.textContent = `Đã tải ${S.dl.done}/${S.dl.total}, lỗi ${S.dl.fail}`; }
+    }
+  };
+  await Promise.all([1, 2, 3, 4].map(worker));
+  const d = S.dl; d.running = false; updateNetBadge(); if (!S.track) keepAwake(false);
+  toast(`${d.abort ? 'Đã dừng' : 'Hoàn tất'} tải bản đồ ${label || ''}: ${d.done} ô${d.fail ? ', chưa tải được ' + d.fail + ' ô (bấm tải lại để bổ sung)' : ''}`, 6000);
+  const st = $('#olSt'); if (st) st.textContent = `Hoàn tất: ${d.done} ô${d.fail ? ', lỗi ' + d.fail : ''}.`;
+}
+function tilesForBounds(bounds, zmin, zmax, out) {
+  out = out || new Map();
+  for (let z = zmin; z <= zmax; z++) {
+    const p1 = map.project(bounds.getNorthWest(), z).divideBy(256).floor(), p2 = map.project(bounds.getSouthEast(), z).divideBy(256).floor();
+    for (let x = p1.x; x <= p2.x; x++) for (let y = p1.y; y <= p2.y; y++) out.set(z + '/' + x + '/' + y, { x, y, z });
+  }
+  return out;
+}
 const BASES = {
   otm: { n: 'Địa hình (OpenTopoMap - có đường bình độ)', u: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', mz: 17, a: '© OpenTopoMap, © OSM' },
   osm: { n: 'OpenStreetMap', u: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', mz: 18, a: '© OpenStreetMap' },
@@ -110,6 +212,7 @@ async function loadAll() {
   all.forEach(f => { S.feats.set(f.id, f); render(f); });
   setBase(S.set.base);
   await loadRefs();
+  S.tileCount = await DB.count('tiles').catch(() => 0);
   const v = await DB.get('kv', 'view');
   if (v) map.setView(v.c, v.z);
   else if (all.length) try { map.fitBounds(L.featureGroup(Object.values(groups)).getBounds(), { maxZoom: 16 }); } catch (e) { }
@@ -743,6 +846,8 @@ $('#btnCompass').onclick = () => setRotMode((S.rotMode + 1) % 3);
 // Bấm mũi tên Bắc (góc dưới trái) để đưa bản đồ về Bắc lên trên
 if (map.rotateControl && map.rotateControl.getContainer) map.rotateControl.getContainer().addEventListener('click', () => { if (S.rotMode) setRotMode(0); }, true);
 $('#btnCamera').onclick = () => openCamera();
+$('#netBadge').onclick = () => { if (S.dl && S.dl.running && confirm('Dừng tải bản đồ?')) S.dl.abort = true; };
+setInterval(updateNetBadge, 5000);
 // Đồng hồ trên thanh trạng thái
 function tickClock() {
   const age = S.pos ? Math.round((Date.now() - S.pos.t) / 1000) : null;
@@ -1239,34 +1344,15 @@ const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
     S.custom.push({ id: 'cu_' + uid(), name: n, url: u }); await DB.put('kv', 'customBases', S.custom); showTop();
   };
   body.querySelectorAll('[data-cd]').forEach(b => b.onclick = async () => { S.custom.splice(+b.dataset.cd, 1); await DB.put('kv', 'customBases', S.custom); if (!allBases()[S.set.base]) setBase('otm'); showTop(); });
-  let abort = false;
   $('#olGo').onclick = async () => {
     if (!baseLayer) return toast('Chưa chọn bản đồ nền');
-    const zmax = +$('#olZ').value, b = map.getBounds(), list = [];
-    for (let z = Math.floor(map.getZoom()); z <= zmax; z++) {
-      const p1 = map.project(b.getNorthWest(), z).divideBy(256).floor(), p2 = map.project(b.getSouthEast(), z).divideBy(256).floor();
-      for (let x = p1.x; x <= p2.x; x++) for (let y = p1.y; y <= p2.y; y++) list.push({ x, y, z });
-    }
-    if (list.length > 8000) return toast(`Vùng quá lớn (${list.length} ô). Hãy phóng to hoặc giảm zoom tối đa.`, 4000);
-    if (!confirm(`Tải ${list.length} ô bản đồ (~${(list.length * 0.025).toFixed(0)} MB)?`)) return;
-    abort = false; let done = 0, fail = 0; const cid = S.set.base;
-    $('#olGo').disabled = true;
-    const worker = async () => {
-      while (list.length && !abort) {
-        const c = list.pop();
-        try {
-          const u = baseLayer.getTileUrl(c);
-          const r = await fetch(u, { mode: 'cors' }); if (!r.ok) throw 0;
-          await DB.put('tiles', cid + '/' + c.z + '/' + c.x + '/' + c.y, await r.blob()); done++;
-        } catch (e) { fail++; }
-        const st = $('#olSt'); if (st) st.textContent = `Đã tải ${done}, lỗi ${fail}, còn ${list.length}…`; else abort = true;
-      }
-    };
-    await Promise.all([1, 2, 3, 4, 5, 6].map(worker));
-    const st = $('#olSt'); if (st) st.textContent = `Hoàn tất: ${done} ô${fail ? ', lỗi ' + fail + ' ô (nguồn có thể chặn tải về)' : ''}.`;
-    if ($('#olGo')) $('#olGo').disabled = false;
+    const zmax = +$('#olZ').value;
+    const list = [...tilesForBounds(map.getBounds(), Math.max(10, Math.floor(map.getZoom())), zmax).values()];
+    if (list.length > 30000) return toast(`Vùng quá lớn (${list.length} ô). Hãy phóng to hoặc giảm zoom tối đa.`, 4000);
+    if (!confirm(`Tải ${list.length} ô bản đồ (~${(list.length * 0.025).toFixed(0)} MB)? Có thể đóng bảng này, việc tải vẫn chạy.`)) return;
+    downloadTiles(list, S.set.base, 'khung nhìn');
   };
-  $('#olClr').onclick = async () => { if (confirm('Xóa toàn bộ ô bản đồ đã tải?')) { await DB.clear('tiles'); toast('Đã xóa'); } };
+  $('#olClr').onclick = async () => { if (confirm('Xóa toàn bộ ô bản đồ đã tải?')) { await DB.clear('tiles'); S.tileCount = 0; toast('Đã xóa'); } };
   $('#mbAdd').onclick = async () => { const f = await pickFile('.mbtiles'); if (f) { toast('Đang mở…'); await addMBTiles(await f.arrayBuffer(), f.name, true, 1, true); showTop(); } };
   const rl = $('#refL');
   rl.innerHTML = [...S.refs.values()].map(o => { const m = o.meta; return `<li style="flex-wrap:wrap"><input type="checkbox" data-rv="${m.id}" ${m.visible ? 'checked' : ''}>
@@ -1276,7 +1362,8 @@ const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
     <div style="flex-basis:100%;display:flex;gap:8px;align-items:center;margin-top:6px">
       <span class="muted">Nhãn</span><select data-rlab="${m.id}" style="flex:1"><option value="">— không —</option>${m.fields.some(f => /^lo$/i.test(f)) ? `<option value="@lo_ldlr" ${m.label === '@lo_ldlr' ? 'selected' : ''}>Lô + hiện trạng</option><option value="@tk_k_lo" ${m.label === '@tk_k_lo' ? 'selected' : ''}>TK.Khoảnh.Lô</option>` : ''}${m.fields.map(f => `<option ${f === m.label ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>
       <input type="range" min="0.2" max="1" step="0.1" value="${m.opacity}" data-ro="${m.id}" style="flex:1">
-      <button class="btn" data-rcp="${m.id}" title="Chuyển cả lớp vào dữ liệu thu thập">⇩</button></div>${refLegend(o)}
+      <button class="btn" data-rcp="${m.id}" title="Chuyển cả lớp vào dữ liệu thu thập">⇩</button></div>
+    <div style="flex-basis:100%;margin-top:6px"><button class="btn block" data-rdl="${m.id}">⬇ Tải ảnh nền offline cho vùng của lớp này</button></div>${refLegend(o)}
     <div style="flex-basis:100%;display:flex;gap:8px;margin-top:6px"><input data-rq="${m.id}" placeholder="🔎 Tìm lô: VD 572 11 13 (TK khoảnh lô)" style="flex:1"><button class="btn" data-rqb="${m.id}" style="flex:none">Tìm</button></div></li>`; }).join('') || '<li class="muted">Chưa có lớp tham chiếu</li>';
   const R = id => S.refs.get(id);
   rl.querySelectorAll('[data-rcls]').forEach(c => c.onchange = () => { const [id, k] = c.dataset.rcls.split('|'); const o = R(id); const h = new Set(o.meta.hiddenClasses || []); c.checked ? h.delete(k) : h.add(k); o.meta.hiddenClasses = [...h]; renderRef(o); saveRefMeta(); });
@@ -1290,6 +1377,17 @@ const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
     const b = L.geoJSON(hit).getBounds(); closeSheet(); S.follow = false; map.fitBounds(b, { maxZoom: 18, padding: [40, 40] });
     setTimeout(() => refPopup(o, hit, b.getCenter()), 400);
   };
+  rl.querySelectorAll('[data-rdl]').forEach(c => c.onclick = async () => {
+    const o = R(c.dataset.rdl); if (!baseLayer) return toast('Chưa chọn bản đồ nền');
+    const out = new Map(), zmax = Math.min(17, allBases()[S.set.base].mz || 17);
+    const all = L.geoJSON(o.gj).getBounds(); if (!all.isValid()) return;
+    tilesForBounds(all.pad(0.1), 10, 13, out); // toàn vùng ở mức tổng quan
+    (o.gj.features || []).forEach(f => { try { const b = L.geoJSON(f).getBounds(); const pad = 0.004; tilesForBounds(L.latLngBounds([b.getSouth() - pad, b.getWest() - pad], [b.getNorth() + pad, b.getEast() + pad]), 14, zmax, out); } catch (e) { } });
+    const list = [...out.values()];
+    if (list.length > 40000) return toast('Vùng quá lớn (' + list.length + ' ô). Hãy tách lớp nhỏ hơn.', 4000);
+    if (!confirm(`Tải ảnh nền "${allBases()[S.set.base].n}" cho vùng lớp "${o.meta.name}":\n${list.length} ô (~${(list.length * 0.025).toFixed(0)} MB), mức zoom 10–${zmax}.\nNên tải khi có wifi. Có thể đóng bảng, việc tải vẫn chạy.`)) return;
+    closeSheet(); downloadTiles(list, S.set.base, 'cho lớp ' + o.meta.name);
+  });
   rl.querySelectorAll('[data-rqb]').forEach(c => c.onclick = () => findLo(c.dataset.rqb));
   rl.querySelectorAll('[data-rq]').forEach(c => c.onkeydown = e => { if (e.key === 'Enter') findLo(c.dataset.rq); });
   rl.querySelectorAll('[data-rv]').forEach(c => c.onchange = () => { const o = R(c.dataset.rv); o.meta.visible = c.checked; c.checked ? o.layer.addTo(map) : o.layer.remove(); saveRefMeta(); });
@@ -1311,7 +1409,6 @@ const layersSheet = sheetFn('Bản đồ nền & lớp dữ liệu', body => {
   sl.innerHTML = [...S.sat.values()].map(o => `<li><div class="grow"><div class="t">${esc(o.name)}</div><input type="range" min="0.1" max="1" step="0.1" value="${o.layer.options.opacity}" data-so="${o.id}"></div><button class="btn danger" data-sd="${o.id}">✕</button></li>`).join('') || '<li class="muted">Không có</li>';
   sl.querySelectorAll('[data-so]').forEach(c => c.oninput = () => S.sat.get(c.dataset.so).layer.setOpacity(+c.value));
   sl.querySelectorAll('[data-sd]').forEach(c => c.onclick = () => { const o = S.sat.get(c.dataset.sd); o.layer.remove(); o.fp.remove(); S.sat.delete(o.id); showTop(); });
-  return () => { abort = true; };
 });
 async function addMBTiles(buf, name, visible, opacity, store) {
   const key = 'mbt:' + name;
@@ -1413,12 +1510,13 @@ const settingsSheet = sheetFn('Cài đặt', body => {
     <label class="f">Số lần đo lấy trung bình khi tạo điểm</label><input id="seN" type="number" value="${S.set.avgCount}">
     <div class="sec">Hiển thị & ảnh</div>
     <label class="f"><input type="checkbox" id="seL" ${S.set.labels ? 'checked' : ''}>Hiện nhãn tên đối tượng</label>
+    <label class="f"><input type="checkbox" id="seAC" ${S.set.autoCache !== false ? 'checked' : ''}>Tự lưu ảnh nền đã xem để dùng khi mất mạng (đang lưu ${S.tileCount} ô)</label>
     <label class="f"><input type="checkbox" id="seS" ${S.set.stampPhoto ? 'checked' : ''}>Đóng dấu thời gian, tọa độ VN2000 lên ảnh</label>
     <label class="f"><input type="checkbox" id="seG" ${S.set.saveGallery ? 'checked' : ''}>Tự động lưu ảnh vào Bộ sưu tập (album "LN DaTeh GPS")${NATIVE ? '' : ' — chỉ bản APK'}</label>
     <label class="f">Kích thước ảnh tối đa (px)</label><select id="seP">${[1024, 1600, 2048, 3000].map(v => `<option ${v === S.set.photoMax ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <div class="gap"></div><button class="btn primary block" id="seOk">Lưu cài đặt</button>`;
   $('#seOk').onclick = async () => {
-    Object.assign(S.set, { crs: $('#seC').value, surveyor: $('#seU').value.trim(), trackMinDist: +$('#seD').value || 5, trackMaxAcc: +$('#seA').value || 30, autoVertexDist: +$('#seV').value || 10, avgCount: Math.max(2, +$('#seN').value || 10), labels: $('#seL').checked, stampPhoto: $('#seS').checked, saveGallery: $('#seG').checked, photoMax: +$('#seP').value });
+    Object.assign(S.set, { crs: $('#seC').value, surveyor: $('#seU').value.trim(), trackMinDist: +$('#seD').value || 5, trackMaxAcc: +$('#seA').value || 30, autoVertexDist: +$('#seV').value || 10, avgCount: Math.max(2, +$('#seN').value || 10), labels: $('#seL').checked, autoCache: $('#seAC').checked, stampPhoto: $('#seS').checked, saveGallery: $('#seG').checked, photoMax: +$('#seP').value });
     await saveSet(); updateCrsLabel(); updateStatus(); S.feats.forEach(render); toast('Đã lưu cài đặt'); closeSheet();
   };
 });
